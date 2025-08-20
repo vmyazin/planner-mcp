@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
 import { MCPLogEntry } from './api/mcp/[...action]';
+import { TourProvider, useTour } from '../contexts/TourContext';
+import { TourOverlay } from '../components/TourOverlay';
+import { TourButton } from '../components/TourButton';
 
 interface Task {
   id: string;
@@ -47,7 +50,7 @@ const MCPProtocolInspector = () => {
   const logs: MCPLogEntry[] = logsData?.logs || [];
 
   return (
-    <div style={{ border: '1px solid #ccc', borderRadius: '5px', height: '300px', display: 'flex', flexDirection: 'column' }}>
+    <div className="tour-protocol-inspector" style={{ border: '1px solid #ccc', borderRadius: '5px', height: '300px', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '10px', backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', fontWeight: 'bold' }}>
         🔍 MCP Protocol Inspector
       </div>
@@ -114,7 +117,7 @@ const MCPConceptsPanel = ({ currentAction }: { currentAction: string }) => {
   };
 
   return (
-    <div style={{ border: '1px solid #ccc', borderRadius: '5px', height: '250px', display: 'flex', flexDirection: 'column' }}>
+    <div className="tour-concepts-panel" style={{ border: '1px solid #ccc', borderRadius: '5px', height: '250px', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '10px', backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', fontWeight: 'bold' }}>
         📚 Interactive MCP Concepts
       </div>
@@ -171,11 +174,15 @@ const MCPConceptsPanel = ({ currentAction }: { currentAction: string }) => {
   );
 };
 
-const MCPServerStatusPanel = () => {
+const MCPServerStatusPanel = ({ simulatedError }: { simulatedError: boolean }) => {
   const { data: statusData } = useSWR<ServerStatus>('/api/mcp/status', fetcher, { refreshInterval: 2000 });
+  
+  const isConnected = simulatedError ? false : (statusData?.connected ?? false);
+  const connectionText = simulatedError ? 'Connection Error (Simulated)' : 
+                        (statusData?.connected ? 'Connected' : 'Disconnected');
 
   return (
-    <div style={{ border: '1px solid #ccc', borderRadius: '5px', height: '200px', display: 'flex', flexDirection: 'column' }}>
+    <div className="tour-server-status" style={{ border: '1px solid #ccc', borderRadius: '5px', height: '200px', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: '10px', backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', fontWeight: 'bold' }}>
         🖥️ MCP Server Status
       </div>
@@ -187,15 +194,29 @@ const MCPServerStatusPanel = () => {
                 width: '12px', 
                 height: '12px', 
                 borderRadius: '50%', 
-                backgroundColor: statusData?.connected ? '#4caf50' : '#f44336',
-                marginRight: '8px'
+                backgroundColor: isConnected ? '#4caf50' : '#f44336',
+                marginRight: '8px',
+                animation: simulatedError ? 'tour-pulse 1s infinite' : 'none'
               }}
             />
-            <strong>Planner Server: {statusData?.connected ? 'Connected' : 'Disconnected'}</strong>
+            <strong>Planner Server: {connectionText}</strong>
           </div>
           <div style={{ fontSize: '14px', color: '#666' }}>
             Messages exchanged: {statusData?.messageCount || 0}
           </div>
+          {simulatedError && (
+            <div style={{ 
+              marginTop: '10px', 
+              padding: '8px', 
+              backgroundColor: '#ffebee', 
+              border: '1px solid #f44336', 
+              borderRadius: '4px',
+              fontSize: '12px',
+              color: '#c62828'
+            }}>
+              ⚠️ Connection temporarily lost. MCP will retry automatically...
+            </div>
+          )}
         </div>
 
         {statusData?.capabilities && (
@@ -222,11 +243,13 @@ const MCPServerStatusPanel = () => {
   );
 };
 
-export default function Dashboard() {
+function DashboardContent() {
   const [newTaskText, setNewTaskText] = useState('');
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [currentAction, setCurrentAction] = useState('');
+  const [simulatedError, setSimulatedError] = useState(false);
+  const { completeAction, waitingForAction, startTour, isActive, nextStep } = useTour();
 
   const { data: scheduleData, error } = useSWR<{ contents: [{ text: string }] }>(
     '/api/mcp/resources/schedule',
@@ -252,6 +275,11 @@ export default function Dashboard() {
       setNewTaskText('');
       setSelectedTimeSlot('');
       await mutate('/api/mcp/resources/schedule');
+      
+      // Complete tour action if waiting
+      if (waitingForAction) {
+        completeAction();
+      }
     } catch (error) {
       console.error('Failed to add task:', error);
     } finally {
@@ -296,6 +324,41 @@ export default function Dashboard() {
     }
   }, [scheduleData]);
 
+  // Listen for tour refresh events
+  useEffect(() => {
+    const handleTourRefresh = () => {
+      mutate('/api/mcp/resources/schedule');
+      setCurrentAction('Tour triggered resource refresh');
+      setTimeout(() => setCurrentAction(''), 2000);
+    };
+
+    const handleErrorSimulation = () => {
+      setSimulatedError(true);
+      setCurrentAction('🚨 Simulating connection failure...');
+      
+      // Show error state for 3 seconds, then recovery
+      setTimeout(() => {
+        setCurrentAction('✅ Connection recovered! MCP gracefully handled the error.');
+        setTimeout(() => setCurrentAction(''), 2000);
+      }, 3000);
+    };
+
+    const handleErrorComplete = () => {
+      setSimulatedError(false);
+      nextStep(); // Auto advance to next step
+    };
+
+    window.addEventListener('tour-refresh-schedule', handleTourRefresh);
+    window.addEventListener('tour-simulate-error', handleErrorSimulation);
+    window.addEventListener('tour-error-complete', handleErrorComplete);
+    
+    return () => {
+      window.removeEventListener('tour-refresh-schedule', handleTourRefresh);
+      window.removeEventListener('tour-simulate-error', handleErrorSimulation);
+      window.removeEventListener('tour-error-complete', handleErrorComplete);
+    };
+  }, [nextStep]);
+
   if (error) {
     return (
       <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
@@ -307,7 +370,7 @@ export default function Dashboard() {
   }
 
   const TaskList = ({ tasks, title }: { tasks: Task[]; title: string }) => (
-    <div style={{ marginBottom: '20px', padding: '15px', border: '1px solid #ccc', borderRadius: '5px' }}>
+    <div className="tour-task-list" style={{ marginBottom: '20px', padding: '15px', border: '1px solid #ccc', borderRadius: '5px' }}>
       <h3>{title} ({tasks.length})</h3>
       {tasks.length === 0 ? (
         <p style={{ color: '#666', fontStyle: 'italic' }}>No tasks</p>
@@ -338,11 +401,16 @@ export default function Dashboard() {
 
   return (
     <div style={{ fontFamily: 'Arial, sans-serif', minHeight: '100vh' }}>
-      <div style={{ padding: '20px', backgroundColor: '#1976d2', color: 'white' }}>
-        <h1 style={{ margin: 0 }}>📅 MCP Day Planner - Learning Tool</h1>
-        <p style={{ margin: '5px 0 0 0', opacity: 0.9 }}>
-          Learn MCP protocol by seeing it in action • Watch the right panel as you interact!
-        </p>
+      <div className="tour-welcome" style={{ padding: '20px', backgroundColor: '#1976d2', color: 'white' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 style={{ margin: 0 }}>📅 MCP Day Planner - Learning Tool</h1>
+            <p style={{ margin: '5px 0 0 0', opacity: 0.9 }}>
+              Learn MCP protocol by seeing it in action • Watch the right panel as you interact!
+            </p>
+          </div>
+          <TourButton />
+        </div>
       </div>
 
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 120px)' }}>
@@ -350,7 +418,7 @@ export default function Dashboard() {
         <div style={{ flex: 1, padding: '20px', borderRight: '2px solid #ccc' }}>
           <h2 style={{ marginTop: 0 }}>Day Planner</h2>
           
-          <form onSubmit={handleAddTask} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f5f5f5', borderRadius: '5px' }}>
+          <form className="tour-add-task-form" onSubmit={handleAddTask} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f5f5f5', borderRadius: '5px' }}>
             <div style={{ marginBottom: '10px' }}>
               <input
                 type="text"
@@ -382,6 +450,7 @@ export default function Dashboard() {
               </select>
               
               <button 
+                className="tour-add-task-button"
                 type="submit" 
                 disabled={loading || !newTaskText.trim()}
                 style={{ 
@@ -417,7 +486,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          <div style={{ display: 'grid', gap: '15px' }}>
+          <div className="tour-task-container" style={{ display: 'grid', gap: '15px' }}>
             <TaskList tasks={schedule.morning} title="🌅 Morning" />
             <TaskList tasks={schedule.afternoon} title="☀️ Afternoon" />
             <TaskList tasks={schedule.evening} title="🌙 Evening" />
@@ -432,7 +501,7 @@ export default function Dashboard() {
           <h2 style={{ marginTop: 0 }}>MCP Learning Center</h2>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <MCPServerStatusPanel />
+            <MCPServerStatusPanel simulatedError={simulatedError} />
             <MCPConceptsPanel currentAction={currentAction} />
             <MCPProtocolInspector />
           </div>
@@ -467,6 +536,16 @@ export default function Dashboard() {
           {currentAction}
         </div>
       )}
+
+      <TourOverlay />
     </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <TourProvider>
+      <DashboardContent />
+    </TourProvider>
   );
 }
