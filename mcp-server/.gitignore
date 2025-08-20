@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+
+# Data files
+daily-plan.json
+
+# Environment
+.env*
+
+# OS
+.DS_Store
