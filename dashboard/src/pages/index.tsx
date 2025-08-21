@@ -4,6 +4,7 @@ import { MCPLogEntry } from './api/mcp/[...action]';
 import { TourProvider, useTour } from '../contexts/TourContext';
 import { TourOverlay } from '../components/TourOverlay';
 import { TourButton } from '../components/TourButton';
+import { WelcomeModal } from '../components/WelcomeModal';
 
 interface Task {
   id: string;
@@ -249,6 +250,7 @@ function DashboardContent() {
   const [loading, setLoading] = useState(false);
   const [currentAction, setCurrentAction] = useState('');
   const [simulatedError, setSimulatedError] = useState(false);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(true);
   const { completeAction, waitingForAction, startTour, isActive, nextStep } = useTour();
 
   const { data: scheduleData, error } = useSWR<{ contents: [{ text: string }] }>(
@@ -538,6 +540,10 @@ function DashboardContent() {
       )}
 
       <TourOverlay />
+      <WelcomeModal 
+        isOpen={showWelcomeModal} 
+        onClose={() => setShowWelcomeModal(false)} 
+      />
     </div>
   );
 }
