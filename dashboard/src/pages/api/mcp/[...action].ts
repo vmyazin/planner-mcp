@@ -102,7 +102,7 @@ export default async function handler(
             direction: 'request',
             method: 'listResources',
             data: {},
-            success: false
+            success: true
           });
 
           const result = await client.listResources();
@@ -123,7 +123,7 @@ export default async function handler(
             direction: 'request',
             method: 'readResource',
             data: requestData,
-            success: false
+            success: true
           });
 
           const result = await client.readResource(requestData);
@@ -144,7 +144,7 @@ export default async function handler(
           direction: 'request',
           method: 'listTools',
           data: {},
-          success: false
+          success: true
         });
 
         const result = await client.listTools();
@@ -172,7 +172,7 @@ export default async function handler(
           direction: 'request',
           method: 'callTool',
           data: requestData,
-          success: false
+          success: true
         });
 
         const result = await client.callTool(requestData);

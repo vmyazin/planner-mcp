@@ -371,23 +371,43 @@ export function TourOverlay() {
               Previous
             </button>
 
-            <button
-              onClick={skipTour}
-              style={{
-                padding: '8px 16px',
-                backgroundColor: 'transparent',
-                border: 'none',
-                color: '#666',
-                cursor: 'pointer',
-                fontSize: '14px',
-                textDecoration: 'underline'
-              }}
-            >
-              Skip Tour
-            </button>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {/* Show Skip Step button only for step 5 (index 4) when waiting for action */}
+              {currentStep === 4 && waitingForAction && (
+                <button
+                  onClick={nextStep}
+                  style={{
+                    padding: '8px 16px',
+                    backgroundColor: 'transparent',
+                    border: 'none',
+                    color: '#2196f3',
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    textDecoration: 'underline'
+                  }}
+                >
+                  Skip Step
+                </button>
+              )}
+              
+              <button
+                onClick={skipTour}
+                style={{
+                  padding: '8px 16px',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  color: '#666',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  textDecoration: 'underline'
+                }}
+              >
+                Skip Tour
+              </button>
+            </div>
 
             <button
-                          onClick={nextStep}
+              onClick={nextStep}
               disabled={waitingForAction}
               style={{
                 padding: '12px 24px',
@@ -402,7 +422,7 @@ export function TourOverlay() {
                 boxShadow: waitingForAction ? 'none' : '0 2px 8px rgba(33, 150, 243, 0.3)'
               }}
             >
-              {currentStep === steps.length - 1 ? 'Complete Tour' : 'Continue Journey'}
+              {currentStep === steps.length - 1 ? 'Complete Tour' : 'Continue'}
             </button>
           </div>
         </div>
