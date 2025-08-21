@@ -245,6 +245,27 @@ class PlannerServer {
     this.server.setRequestHandler(ListPromptsRequestSchema, async () => ({
       prompts: [
         {
+          name: 'custom_assistant',
+          description: 'Interactive AI assistant for any question or task',
+          arguments: [
+            {
+              name: 'message',
+              description: 'Your question or request for the AI assistant',
+              required: true,
+            },
+            {
+              name: 'context',
+              description: 'Additional context or conversation history',
+              required: false,
+            },
+            {
+              name: 'role',
+              description: 'AI assistant role (productivity_coach, task_planner, creative_helper, etc.)',
+              required: false,
+            },
+          ],
+        },
+        {
           name: 'suggest_tasks',
           description: 'Get AI-powered task suggestions for your day',
           arguments: [
@@ -295,6 +316,49 @@ class PlannerServer {
 
       if (!this.anthropic) {
         throw new Error('Anthropic API key not configured. Please set ANTHROPIC_API_KEY in your environment.');
+      }
+
+      if (name === 'custom_assistant') {
+        const message = (args as any)?.message || '';
+        const context = (args as any)?.context || '';
+        const role = (args as any)?.role || 'helpful assistant';
+
+        if (!message) {
+          throw new Error('Message is required for custom_assistant prompt');
+        }
+
+        const systemPrompt = `You are a ${role} helping with productivity and task management. 
+
+${context ? `Previous conversation and current context: ${context}` : ''}
+
+When the user mentions "my tasks", "my day", "current tasks", or similar references, use the task information provided in the context above. Be specific about their actual tasks when giving advice.
+
+Provide helpful, practical, and actionable responses. Be conversational and engaging while staying focused on productivity and planning topics. When you can see their actual tasks, reference them specifically in your advice.`;
+
+        const response = await this.anthropic.messages.create({
+          model: 'claude-3-haiku-20240307',
+          max_tokens: 500,
+          messages: [
+            {
+              role: 'user',
+              content: message,
+            },
+          ],
+          system: systemPrompt,
+        });
+
+        return {
+          description: 'Interactive AI assistant response',
+          messages: [
+            {
+              role: 'assistant',
+              content: {
+                type: 'text',
+                text: response.content[0].type === 'text' ? response.content[0].text : 'Error generating response',
+              },
+            },
+          ],
+        };
       }
 
       if (name === 'suggest_tasks') {

@@ -1,5 +1,22 @@
 import { useState, useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
+import { 
+  Search, 
+  Target, 
+  Lightbulb, 
+  Monitor, 
+  AlertTriangle, 
+  CheckCircle, 
+  Hand, 
+  Brain, 
+  Clock, 
+  Send, 
+  Sunrise, 
+  Sun, 
+  Moon, 
+  ClipboardList, 
+  Calendar 
+} from 'lucide-react';
 import { MCPLogEntry } from './api/mcp/[...action]';
 import { TourProvider, useTour } from '../contexts/TourContext';
 import { TourOverlay } from '../components/TourOverlay';
@@ -63,8 +80,9 @@ const MCPProtocolInspector = () => {
 
   return (
     <div className="tour-protocol-inspector" style={{ border: '1px solid #ccc', borderRadius: '5px', height: '300px', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '10px', backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', fontWeight: 'bold' }}>
-        🔍 MCP Protocol Inspector
+      <div style={{ padding: '10px', backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Search size={16} />
+        MCP Protocol Inspector
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: '10px', fontSize: '12px', fontFamily: 'monospace' }}>
         {logs.length === 0 ? (
@@ -130,8 +148,9 @@ const MCPConceptsPanel = ({ currentAction }: { currentAction: string }) => {
 
   return (
     <div className="tour-concepts-panel" style={{ border: '1px solid #ccc', borderRadius: '5px', height: '250px', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '10px', backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', fontWeight: 'bold' }}>
-        📚 Interactive MCP Concepts
+      <div style={{ padding: '10px', backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Lightbulb size={16} />
+        Interactive MCP Concepts
       </div>
       <div style={{ display: 'flex', borderBottom: '1px solid #ccc' }}>
         {Object.entries(concepts).map(([key, concept]) => (
@@ -186,104 +205,354 @@ const MCPConceptsPanel = ({ currentAction }: { currentAction: string }) => {
   );
 };
 
-const MCPPromptsPanel = ({ currentAction, setCurrentAction }: { currentAction: string, setCurrentAction: (action: string) => void }) => {
-  const [promptResponse, setPromptResponse] = useState<string>('');
-  const [loading, setLoading] = useState(false);
+interface ChatMessage {
+  id: string;
+  type: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
+  isStreaming?: boolean;
+}
 
-  const handlePromptCall = async (promptName: string, args: any = {}) => {
+const MCPPromptsPanel = ({ currentAction, setCurrentAction, schedule }: { currentAction: string, setCurrentAction: (action: string) => void, schedule: Schedule }) => {
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    {
+      id: '1',
+      type: 'assistant',
+      content: 'Hello! I\'m your AI productivity assistant. Ask me anything about task management, productivity tips, or planning your day!',
+      timestamp: new Date(),
+    }
+  ]);
+  const [currentInput, setCurrentInput] = useState('');
+  const [selectedRole, setSelectedRole] = useState('productivity_coach');
+  const [loading, setLoading] = useState(false);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+
+  const roles = [
+    { value: 'productivity_coach', label: 'Productivity Coach', description: 'Focus on efficiency and time management' },
+    { value: 'task_planner', label: 'Task Planner', description: 'Help organize and prioritize tasks' },
+    { value: 'creative_helper', label: 'Creative Helper', description: 'Brainstorm ideas and solutions' },
+    { value: 'helpful_assistant', label: 'General Assistant', description: 'All-purpose AI helper' },
+  ];
+
+  const simulateStreaming = (text: string, messageId: string) => {
+    const words = text.split(' ');
+    let currentText = '';
+    let wordIndex = 0;
+
+    const streamInterval = setInterval(() => {
+      if (wordIndex < words.length) {
+        currentText += (wordIndex > 0 ? ' ' : '') + words[wordIndex];
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId 
+            ? { ...msg, content: currentText, isStreaming: true }
+            : msg
+        ));
+        wordIndex++;
+      } else {
+        clearInterval(streamInterval);
+        setMessages(prev => prev.map(msg => 
+          msg.id === messageId 
+            ? { ...msg, isStreaming: false }
+            : msg
+        ));
+        setStreamingMessageId(null);
+      }
+    }, 50);
+  };
+
+  const handleSendMessage = async () => {
+    if (!currentInput.trim() || loading) return;
+
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      type: 'user',
+      content: currentInput.trim(),
+      timestamp: new Date(),
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    const messageToSend = currentInput.trim();
+    setCurrentInput('');
     setLoading(true);
-    setCurrentAction(`Calling prompt: ${promptName}`);
+    setCurrentAction('Calling prompt: custom_assistant');
+
     try {
-      const result = await callPrompt(promptName, args);
+      // Create context from recent messages
+      const conversationContext = messages.slice(-5).map(msg => 
+        `${msg.type === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+      ).join('\n');
+
+      // Add current task data to context
+      const allTasks = [
+        ...schedule.morning,
+        ...schedule.afternoon, 
+        ...schedule.evening,
+        ...schedule.unscheduled
+      ];
+
+      const taskContext = allTasks.length > 0 ? 
+        `\n\nCurrent user's tasks:\n${allTasks.map(task => 
+          `- ${task.text} (${task.timeSlot || 'unscheduled'}) ${task.completed ? '[COMPLETED]' : '[PENDING]'}`
+        ).join('\n')}` : 
+        '\n\nThe user has no tasks currently planned.';
+
+      const enhancedContext = conversationContext + taskContext;
+
+      const result = await callPrompt('custom_assistant', {
+        message: messageToSend,
+        context: enhancedContext,
+        role: selectedRole
+      });
+
       const responseText = result.messages?.[0]?.content?.text || 'No response received';
-      setPromptResponse(responseText);
+      
+      const assistantMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: '',
+        timestamp: new Date(),
+        isStreaming: true,
+      };
+
+      setMessages(prev => [...prev, assistantMessage]);
+      setStreamingMessageId(assistantMessage.id);
+      simulateStreaming(responseText, assistantMessage.id);
+
     } catch (error) {
-      setPromptResponse(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      const errorMessage: ChatMessage = {
+        id: (Date.now() + 1).toString(),
+        type: 'assistant',
+        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMessage]);
     } finally {
       setLoading(false);
       setCurrentAction('');
     }
   };
 
+  const handleQuickPrompt = async (promptType: string) => {
+    let message = '';
+    const hasActiveTasks = schedule.morning.length + schedule.afternoon.length + schedule.evening.length + schedule.unscheduled.length > 0;
+    
+    switch (promptType) {
+      case 'tasks':
+        message = hasActiveTasks ? 
+          'Can you help me prioritize my current tasks and suggest what to focus on next?' :
+          'Can you suggest some productive tasks for my day?';
+        break;
+      case 'tips':
+        message = hasActiveTasks ? 
+          'Based on my current tasks, what productivity tips would help me get more done?' :
+          'What are some productivity tips for better time management?';
+        break;
+      case 'schedule':
+        message = hasActiveTasks ? 
+          'How can I optimize my current schedule and task list for better productivity?' :
+          'How can I structure my day for better productivity?';
+        break;
+    }
+    setCurrentInput(message);
+  };
+
   return (
-    <div style={{ border: '1px solid #ccc', borderRadius: '5px', height: '300px', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '10px', backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', fontWeight: 'bold' }}>
-        🤖 AI Prompts
+    <div style={{ border: '1px solid #ccc', borderRadius: '5px', height: '400px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ 
+        padding: '12px', 
+        backgroundColor: '#f5f5f5', 
+        borderBottom: '1px solid #ccc', 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center' 
+      }}>
+                 <div style={{ fontWeight: 'bold', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+           <Brain size={16} />
+           Interactive AI Assistant
+         </div>
+        <select
+          value={selectedRole}
+          onChange={(e) => setSelectedRole(e.target.value)}
+          style={{
+            padding: '4px 8px',
+            fontSize: '12px',
+            border: '1px solid #ccc',
+            borderRadius: '4px',
+            backgroundColor: 'white'
+          }}
+        >
+          {roles.map(role => (
+            <option key={role.value} value={role.value} title={role.description}>
+              {role.label}
+            </option>
+          ))}
+        </select>
       </div>
-      <div style={{ flex: 1, padding: '15px', overflow: 'auto' }}>
-        <div style={{ marginBottom: '15px' }}>
-          <button
-            onClick={() => handlePromptCall('suggest_tasks', { context: 'Work day', focus_area: 'productivity' })}
-            disabled={loading}
+
+      <div style={{ flex: 1, padding: '12px', overflow: 'auto', backgroundColor: '#fafafa' }}>
+        {messages.map((message) => (
+          <div
+            key={message.id}
             style={{
-              width: '100%',
-              padding: '8px',
-              marginBottom: '8px',
-              backgroundColor: '#2196f3',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontSize: '14px'
+              display: 'flex',
+              justifyContent: message.type === 'user' ? 'flex-end' : 'flex-start',
+              marginBottom: '12px',
             }}
           >
-            🎯 Get Task Suggestions
+            <div
+              style={{
+                maxWidth: '80%',
+                padding: '10px 12px',
+                borderRadius: '12px',
+                backgroundColor: message.type === 'user' ? '#2196f3' : '#e3f2fd',
+                color: message.type === 'user' ? 'white' : '#333',
+                fontSize: '14px',
+                lineHeight: '1.4',
+                wordBreak: 'break-word',
+                position: 'relative',
+              }}
+            >
+              {message.content}
+              {message.isStreaming && (
+                <span style={{ 
+                  animation: 'blink 1s infinite',
+                  marginLeft: '2px' 
+                }}>|</span>
+              )}
+              <div style={{
+                fontSize: '11px',
+                opacity: 0.7,
+                marginTop: '4px',
+                textAlign: message.type === 'user' ? 'right' : 'left'
+              }}>
+                {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
+          </div>
+        ))}
+        {loading && !streamingMessageId && (
+          <div style={{ 
+            display: 'flex', 
+            justifyContent: 'flex-start',
+            marginBottom: '12px' 
+          }}>
+            <div style={{
+              padding: '10px 12px',
+              borderRadius: '12px',
+              backgroundColor: '#e3f2fd',
+              fontSize: '14px',
+              fontStyle: 'italic',
+              color: '#666',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
+            }}>
+              <Brain size={16} />
+              Thinking...
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ padding: '12px', borderTop: '1px solid #ccc', backgroundColor: 'white' }}>
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '8px' }}>
+          <button
+            onClick={() => handleQuickPrompt('tasks')}
+            disabled={loading}
+            style={{
+              flex: 1,
+              padding: '6px',
+              fontSize: '11px',
+              backgroundColor: '#e8f5e8',
+              border: '1px solid #4caf50',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+              <Target size={14} />
+              Tasks
+            </div>
           </button>
           <button
-            onClick={() => handlePromptCall('productivity_tips', { task_types: 'planning and organization' })}
+            onClick={() => handleQuickPrompt('tips')}
             disabled={loading}
             style={{
-              width: '100%',
-              padding: '8px',
-              marginBottom: '8px',
-              backgroundColor: '#4caf50',
-              color: 'white',
-              border: 'none',
+              flex: 1,
+              padding: '6px',
+              fontSize: '11px',
+              backgroundColor: '#fff3e0',
+              border: '1px solid #ff9800',
               borderRadius: '4px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              fontSize: '14px'
+              cursor: 'pointer'
             }}
           >
-            💡 Get Productivity Tips
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+              <Lightbulb size={14} />
+              Tips
+            </div>
+          </button>
+          <button
+            onClick={() => handleQuickPrompt('schedule')}
+            disabled={loading}
+            style={{
+              flex: 1,
+              padding: '6px',
+              fontSize: '11px',
+              backgroundColor: '#e3f2fd',
+              border: '1px solid #2196f3',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+              <Calendar size={14} />
+              Schedule
+            </div>
           </button>
         </div>
-
-        {loading && (
-          <div style={{ 
-            padding: '15px', 
-            textAlign: 'center', 
-            fontStyle: 'italic', 
-            color: '#666' 
-          }}>
-            AI is thinking...
-          </div>
-        )}
-
-        {promptResponse && !loading && (
-          <div style={{ 
-            backgroundColor: '#f8f9fa', 
-            border: '1px solid #e9ecef', 
-            borderRadius: '4px', 
-            padding: '12px',
-            fontSize: '14px',
-            whiteSpace: 'pre-wrap',
-            lineHeight: '1.4'
-          }}>
-            {promptResponse}
-          </div>
-        )}
-
-        {!promptResponse && !loading && (
-          <div style={{ 
-            padding: '15px', 
-            textAlign: 'center', 
-            fontStyle: 'italic', 
-            color: '#666' 
-          }}>
-            Click a button above to get AI assistance!
-          </div>
-        )}
+        
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <input
+            type="text"
+            value={currentInput}
+            onChange={(e) => setCurrentInput(e.target.value)}
+            onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+            placeholder="Ask me anything about productivity..."
+            disabled={loading}
+            style={{
+              flex: 1,
+              padding: '10px',
+              border: '1px solid #ccc',
+              borderRadius: '6px',
+              fontSize: '14px',
+              outline: 'none'
+            }}
+          />
+          <button
+            onClick={handleSendMessage}
+            disabled={loading || !currentInput.trim()}
+            style={{
+              padding: '10px 16px',
+              backgroundColor: loading ? '#ccc' : '#2196f3',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            {loading ? <Clock size={16} /> : <Send size={16} />}
+          </button>
+        </div>
       </div>
+
+      <style jsx>{`
+        @keyframes blink {
+          0%, 50% { opacity: 1; }
+          51%, 100% { opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 };
@@ -297,9 +566,10 @@ const MCPServerStatusPanel = ({ simulatedError }: { simulatedError: boolean }) =
 
   return (
     <div className="tour-server-status" style={{ border: '1px solid #ccc', borderRadius: '5px', height: '200px', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '10px', backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', fontWeight: 'bold' }}>
-        🖥️ MCP Server Status
-      </div>
+              <div style={{ padding: '10px', backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+         <Monitor size={16} />
+         MCP Server Status
+       </div>
       <div style={{ flex: 1, padding: '15px', overflow: 'auto' }}>
         <div style={{ marginBottom: '15px' }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px' }}>
@@ -328,7 +598,10 @@ const MCPServerStatusPanel = ({ simulatedError }: { simulatedError: boolean }) =
               fontSize: '12px',
               color: '#c62828'
             }}>
-              ⚠️ Connection temporarily lost. MCP will retry automatically...
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <AlertTriangle size={14} />
+                Connection temporarily lost. MCP will retry automatically...
+              </div>
             </div>
           )}
         </div>
@@ -459,7 +732,7 @@ function DashboardContent() {
       
       // Show error state for 3 seconds, then recovery
       setTimeout(() => {
-        setCurrentAction('✅ Connection recovered! MCP gracefully handled the error.');
+        setCurrentAction('Connection recovered! MCP gracefully handled the error.');
         setTimeout(() => setCurrentAction(''), 2000);
       }, 3000);
     };
@@ -490,9 +763,23 @@ function DashboardContent() {
     );
   }
 
-  const TaskList = ({ tasks, title }: { tasks: Task[]; title: string }) => (
-    <div className="tour-task-list" style={{ marginBottom: '20px', padding: '15px', border: '1px solid #ccc', borderRadius: '5px' }}>
-      <h3>{title} ({tasks.length})</h3>
+  const TaskList = ({ tasks, title }: { tasks: Task[]; title: string }) => {
+    const getIcon = () => {
+      switch (title.toLowerCase()) {
+        case 'morning': return <Sunrise size={16} />;
+        case 'afternoon': return <Sun size={16} />;
+        case 'evening': return <Moon size={16} />;
+        case 'unscheduled': return <ClipboardList size={16} />;
+        default: return null;
+      }
+    };
+
+    return (
+      <div className="tour-task-list" style={{ marginBottom: '20px', padding: '15px', border: '1px solid #ccc', borderRadius: '5px' }}>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {getIcon()}
+          {title} ({tasks.length})
+        </h3>
       {tasks.length === 0 ? (
         <p style={{ color: '#666', fontStyle: 'italic' }}>No tasks</p>
       ) : (
@@ -519,13 +806,17 @@ function DashboardContent() {
       )}
     </div>
   );
+  };
 
   return (
     <div style={{ fontFamily: 'Arial, sans-serif', minHeight: '100vh' }}>
       <div className="tour-welcome" style={{ padding: '20px', backgroundColor: '#1976d2', color: 'white' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h1 style={{ margin: 0 }}>📅 MCP Day Planner - Learning Tool</h1>
+            <h1 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Calendar size={24} />
+              MCP Day Planner - Learning Tool
+            </h1>
             <p style={{ margin: '5px 0 0 0', opacity: 0.9 }}>
               Learn MCP protocol by seeing it in action • Watch the right panel as you interact!
             </p>
@@ -602,17 +893,22 @@ function DashboardContent() {
                   cursor: loading ? 'not-allowed' : 'pointer'
                 }}
               >
-                {loading ? 'Planning...' : '🎯 Plan My Day'}
+                {loading ? 'Planning...' : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Target size={16} />
+                    Plan My Day
+                  </div>
+                )}
               </button>
             </div>
           )}
 
           <div className="tour-task-container" style={{ display: 'grid', gap: '15px' }}>
-            <TaskList tasks={schedule.morning} title="🌅 Morning" />
-            <TaskList tasks={schedule.afternoon} title="☀️ Afternoon" />
-            <TaskList tasks={schedule.evening} title="🌙 Evening" />
+            <TaskList tasks={schedule.morning} title="Morning" />
+            <TaskList tasks={schedule.afternoon} title="Afternoon" />
+            <TaskList tasks={schedule.evening} title="Evening" />
             {schedule.unscheduled.length > 0 && (
-              <TaskList tasks={schedule.unscheduled} title="📋 Unscheduled" />
+              <TaskList tasks={schedule.unscheduled} title="Unscheduled" />
             )}
           </div>
         </div>
@@ -624,7 +920,7 @@ function DashboardContent() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <MCPServerStatusPanel simulatedError={simulatedError} />
             <MCPConceptsPanel currentAction={currentAction} />
-            <MCPPromptsPanel currentAction={currentAction} setCurrentAction={setCurrentAction} />
+            <MCPPromptsPanel currentAction={currentAction} setCurrentAction={setCurrentAction} schedule={schedule} />
             <MCPProtocolInspector />
           </div>
         </div>
