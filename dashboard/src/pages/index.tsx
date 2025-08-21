@@ -46,6 +46,17 @@ const callTool = async (toolName: string, args: any = {}) => {
   return response.json();
 };
 
+const callPrompt = async (promptName: string, args: any = {}) => {
+  const queryParams = new URLSearchParams(args).toString();
+  const response = await fetch(`/api/mcp/prompts/${promptName}?${queryParams}`);
+  
+  if (!response.ok) {
+    throw new Error(`Prompt call failed: ${response.statusText}`);
+  }
+  
+  return response.json();
+};
+
 const MCPProtocolInspector = () => {
   const { data: logsData } = useSWR('/api/mcp/logs', fetcher, { refreshInterval: 1000 });
   const logs: MCPLogEntry[] = logsData?.logs || [];
@@ -110,10 +121,10 @@ const MCPConceptsPanel = ({ currentAction }: { currentAction: string }) => {
     },
     prompts: {
       title: 'Prompts',
-      definition: 'Templates for structured AI interactions',
-      purpose: 'Guide AI responses with predefined context and format',
-      example: 'Prompt for generating daily task suggestions',
-      liveExample: 'Not used in this simple example'
+      definition: 'AI-powered templates for intelligent assistance',
+      purpose: 'Get AI suggestions for tasks, schedule optimization, and productivity tips',
+      example: 'Getting task suggestions or schedule optimization advice',
+      liveExample: currentAction.includes('prompt') ? '🔴 AI prompt being called now!' : ''
     }
   };
 
@@ -170,6 +181,108 @@ const MCPConceptsPanel = ({ currentAction }: { currentAction: string }) => {
             </div>
           );
         })()}
+      </div>
+    </div>
+  );
+};
+
+const MCPPromptsPanel = ({ currentAction, setCurrentAction }: { currentAction: string, setCurrentAction: (action: string) => void }) => {
+  const [promptResponse, setPromptResponse] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+
+  const handlePromptCall = async (promptName: string, args: any = {}) => {
+    setLoading(true);
+    setCurrentAction(`Calling prompt: ${promptName}`);
+    try {
+      const result = await callPrompt(promptName, args);
+      const responseText = result.messages?.[0]?.content?.text || 'No response received';
+      setPromptResponse(responseText);
+    } catch (error) {
+      setPromptResponse(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+      setCurrentAction('');
+    }
+  };
+
+  return (
+    <div style={{ border: '1px solid #ccc', borderRadius: '5px', height: '300px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '10px', backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', fontWeight: 'bold' }}>
+        🤖 AI Prompts
+      </div>
+      <div style={{ flex: 1, padding: '15px', overflow: 'auto' }}>
+        <div style={{ marginBottom: '15px' }}>
+          <button
+            onClick={() => handlePromptCall('suggest_tasks', { context: 'Work day', focus_area: 'productivity' })}
+            disabled={loading}
+            style={{
+              width: '100%',
+              padding: '8px',
+              marginBottom: '8px',
+              backgroundColor: '#2196f3',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            🎯 Get Task Suggestions
+          </button>
+          <button
+            onClick={() => handlePromptCall('productivity_tips', { task_types: 'planning and organization' })}
+            disabled={loading}
+            style={{
+              width: '100%',
+              padding: '8px',
+              marginBottom: '8px',
+              backgroundColor: '#4caf50',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              fontSize: '14px'
+            }}
+          >
+            💡 Get Productivity Tips
+          </button>
+        </div>
+
+        {loading && (
+          <div style={{ 
+            padding: '15px', 
+            textAlign: 'center', 
+            fontStyle: 'italic', 
+            color: '#666' 
+          }}>
+            AI is thinking...
+          </div>
+        )}
+
+        {promptResponse && !loading && (
+          <div style={{ 
+            backgroundColor: '#f8f9fa', 
+            border: '1px solid #e9ecef', 
+            borderRadius: '4px', 
+            padding: '12px',
+            fontSize: '14px',
+            whiteSpace: 'pre-wrap',
+            lineHeight: '1.4'
+          }}>
+            {promptResponse}
+          </div>
+        )}
+
+        {!promptResponse && !loading && (
+          <div style={{ 
+            padding: '15px', 
+            textAlign: 'center', 
+            fontStyle: 'italic', 
+            color: '#666' 
+          }}>
+            Click a button above to get AI assistance!
+          </div>
+        )}
       </div>
     </div>
   );
@@ -234,6 +347,12 @@ const MCPServerStatusPanel = ({ simulatedError }: { simulatedError: boolean }) =
               {statusData.capabilities.tools.map((tool: any, i: number) => (
                 <div key={i} style={{ marginLeft: '15px', color: '#666' }}>
                   • {tool.name}
+                </div>
+              ))}
+              <div style={{ marginTop: '8px' }}><strong>Prompts:</strong> {statusData.capabilities.prompts.length}</div>
+              {statusData.capabilities.prompts.map((prompt: any, i: number) => (
+                <div key={i} style={{ marginLeft: '15px', color: '#666' }}>
+                  • {prompt.name}
                 </div>
               ))}
             </div>
@@ -505,6 +624,7 @@ function DashboardContent() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <MCPServerStatusPanel simulatedError={simulatedError} />
             <MCPConceptsPanel currentAction={currentAction} />
+            <MCPPromptsPanel currentAction={currentAction} setCurrentAction={setCurrentAction} />
             <MCPProtocolInspector />
           </div>
         </div>

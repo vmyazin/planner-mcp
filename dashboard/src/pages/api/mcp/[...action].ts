@@ -35,10 +35,17 @@ async function getMcpClient(): Promise<Client> {
   }
 
   const serverPath = path.join(process.cwd(), '..', 'mcp-server', 'dist', 'index.js');
+  const serverDir = path.join(process.cwd(), '..', 'mcp-server');
   
   const transport = new StdioClientTransport({
     command: 'node',
     args: [serverPath],
+    env: {
+      ...process.env,
+      // Also try to load from the dashboard's .env.local
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY
+    },
+    cwd: serverDir, // Set working directory to mcp-server
   });
 
   mcpClient = new Client(
@@ -81,6 +88,13 @@ export default async function handler(
             resources: resources.resources || [],
             prompts: []
           };
+          
+          try {
+            const prompts = await mcpClient!.listPrompts();
+            capabilities.prompts = prompts.prompts || [];
+          } catch (error) {
+            // Prompts might not be supported
+          }
         } catch (error) {
           // Connection might be broken
         }
@@ -96,6 +110,61 @@ export default async function handler(
     const client = await getMcpClient();
 
     if (req.method === 'GET') {
+      if (action[0] === 'prompts') {
+        if (action.length === 1) {
+          logMCPInteraction({
+            direction: 'request',
+            method: 'listPrompts',
+            data: {},
+            success: true
+          });
+
+          const result = await client.listPrompts();
+          
+          logMCPInteraction({
+            direction: 'response',
+            method: 'listPrompts',
+            data: result,
+            success: true
+          });
+
+          return res.json(result);
+        } else {
+          const promptName = action[1];
+          
+          // Convert query parameters to proper arguments object
+          const args: Record<string, any> = {};
+          Object.entries(req.query).forEach(([key, value]) => {
+            if (key !== 'action') {
+              args[key] = Array.isArray(value) ? value[0] : value;
+            }
+          });
+          
+          const requestData = { 
+            name: promptName,
+            arguments: args
+          };
+          
+          logMCPInteraction({
+            direction: 'request',
+            method: 'getPrompt',
+            data: requestData,
+            success: true
+          });
+
+          const result = await client.getPrompt(requestData);
+          
+          logMCPInteraction({
+            direction: 'response',
+            method: 'getPrompt',
+            data: result,
+            success: true
+          });
+
+          return res.json(result);
+        }
+      }
+
       if (action[0] === 'resources') {
         if (action.length === 1) {
           logMCPInteraction({
