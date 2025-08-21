@@ -1,4 +1,4 @@
-import { Sunrise, Sun, Moon, ClipboardList, CheckCircle, Archive } from 'lucide-react';
+import { Sunrise, Sun, Moon, ClipboardList, Archive } from 'lucide-react';
 
 interface Task {
   id: string;
@@ -53,9 +53,6 @@ export const TaskList = ({ tasks, title, onCompleteTask, onArchiveTask, loading 
                   style={{ marginRight: '10px' }}
                 />
                 <span style={{ textDecoration: task.completed ? 'line-through' : 'none' }}>{task.text}</span>
-                {task.completed && (
-                  <CheckCircle size={16} style={{ marginLeft: '8px', color: '#4caf50' }} />
-                )}
               </div>
               {task.completed && onArchiveTask && (
                 <button

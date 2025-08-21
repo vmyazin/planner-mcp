@@ -43,7 +43,7 @@ async function getMcpClient(): Promise<Client> {
     env: {
       ...process.env,
       // Also try to load from the dashboard's .env.local
-      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY
+      ...(process.env.ANTHROPIC_API_KEY && { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY })
     },
     cwd: serverDir, // Set working directory to mcp-server
   });
@@ -77,7 +77,7 @@ export default async function handler(
     // Special endpoint for server status
     if (req.method === 'GET' && action[0] === 'status') {
       const isConnected = mcpClient !== null;
-      let capabilities = null;
+      let capabilities: any = null;
       
       if (isConnected) {
         try {
@@ -86,7 +86,7 @@ export default async function handler(
           capabilities = {
             tools: tools.tools || [],
             resources: resources.resources || [],
-            prompts: []
+            prompts: [] as any[]
           };
           
           try {

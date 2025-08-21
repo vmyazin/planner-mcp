@@ -140,6 +140,20 @@ function DashboardContent() {
     }
   };
 
+  const handleArchiveTask = async (taskId: string) => {
+    setLoading(true);
+    setCurrentAction('Calling tool: archive_task');
+    try {
+      await callTool('archive_task', { taskId });
+      await mutate('/api/mcp/resources/schedule');
+    } catch (error) {
+      console.error('Failed to archive task:', error);
+    } finally {
+      setLoading(false);
+      setCurrentAction('');
+    }
+  };
+
   useEffect(() => {
     if (scheduleData) {
       setCurrentAction('Reading resource: schedule');
@@ -277,11 +291,11 @@ function DashboardContent() {
           )}
 
           <div className="tour-task-container" style={{ display: 'grid', gap: '15px' }}>
-            <TaskList tasks={schedule.morning} title="Morning" onCompleteTask={handleCompleteTask} loading={loading} />
-            <TaskList tasks={schedule.afternoon} title="Afternoon" onCompleteTask={handleCompleteTask} loading={loading} />
-            <TaskList tasks={schedule.evening} title="Evening" onCompleteTask={handleCompleteTask} loading={loading} />
+            <TaskList tasks={schedule.morning} title="Morning" onCompleteTask={handleCompleteTask} onArchiveTask={handleArchiveTask} loading={loading} />
+            <TaskList tasks={schedule.afternoon} title="Afternoon" onCompleteTask={handleCompleteTask} onArchiveTask={handleArchiveTask} loading={loading} />
+            <TaskList tasks={schedule.evening} title="Evening" onCompleteTask={handleCompleteTask} onArchiveTask={handleArchiveTask} loading={loading} />
             {schedule.unscheduled.length > 0 && (
-              <TaskList tasks={schedule.unscheduled} title="Unscheduled" onCompleteTask={handleCompleteTask} loading={loading} />
+              <TaskList tasks={schedule.unscheduled} title="Unscheduled" onCompleteTask={handleCompleteTask} onArchiveTask={handleArchiveTask} loading={loading} />
             )}
           </div>
         </div>
