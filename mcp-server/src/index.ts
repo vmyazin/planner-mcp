@@ -21,6 +21,7 @@ interface Task {
   id: string;
   text: string;
   completed: boolean;
+  archived?: boolean;
   timeSlot?: 'morning' | 'afternoon' | 'evening';
 }
 
@@ -105,23 +106,25 @@ class PlannerServer {
       const plan = await this.readPlan();
 
       if (request.params.uri === 'today-tasks') {
+        const activeTasks = plan.tasks.filter(t => !t.archived);
         return {
           contents: [
             {
               uri: 'today-tasks',
               mimeType: 'application/json',
-              text: JSON.stringify(plan.tasks, null, 2),
+              text: JSON.stringify(activeTasks, null, 2),
             },
           ],
         };
       }
 
       if (request.params.uri === 'schedule') {
+        const activeTasks = plan.tasks.filter(t => !t.archived);
         const schedule = {
-          morning: plan.tasks.filter(t => t.timeSlot === 'morning'),
-          afternoon: plan.tasks.filter(t => t.timeSlot === 'afternoon'),
-          evening: plan.tasks.filter(t => t.timeSlot === 'evening'),
-          unscheduled: plan.tasks.filter(t => !t.timeSlot),
+          morning: activeTasks.filter(t => t.timeSlot === 'morning'),
+          afternoon: activeTasks.filter(t => t.timeSlot === 'afternoon'),
+          evening: activeTasks.filter(t => t.timeSlot === 'evening'),
+          unscheduled: activeTasks.filter(t => !t.timeSlot),
         };
         return {
           contents: [
@@ -173,6 +176,17 @@ class PlannerServer {
             type: 'object',
             properties: {},
             additionalProperties: false,
+          },
+        },
+        {
+          name: 'archive_task',
+          description: 'Archive a completed task to remove it from active view',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              taskId: { type: 'string', description: 'Task ID to archive' },
+            },
+            required: ['taskId'],
           },
         },
       ],
@@ -234,6 +248,27 @@ class PlannerServer {
             {
               type: 'text',
               text: `Assigned ${unscheduled.length} tasks to time slots`,
+            },
+          ],
+        };
+      }
+
+      if (name === 'archive_task') {
+        const plan = await this.readPlan();
+        const task = plan.tasks.find(t => t.id === (args as any).taskId);
+        if (!task) {
+          throw new Error(`Task not found: ${(args as any).taskId}`);
+        }
+        if (!task.completed) {
+          throw new Error(`Task must be completed before archiving: ${task.text}`);
+        }
+        task.archived = true;
+        await this.writePlan(plan);
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Archived task: ${task.text}`,
             },
           ],
         };

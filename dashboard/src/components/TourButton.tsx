@@ -1,10 +1,9 @@
 import React from 'react';
+import { GraduationCap, RotateCcw } from 'lucide-react';
 import { useTour } from '../contexts/TourContext';
 
 export function TourButton() {
   const { startTour, restartTour, hasCompletedTour, isActive } = useTour();
-
-
 
   return (
     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
@@ -22,7 +21,10 @@ export function TourButton() {
             fontWeight: 'bold',
             boxShadow: '0 4px 12px rgba(255, 152, 0, 0.4)',
             animation: 'tour-button-pulse 2s infinite',
-            transition: 'all 0.3s ease'
+            transition: 'all 0.3s ease',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.backgroundColor = '#f57c00';
@@ -33,7 +35,8 @@ export function TourButton() {
             e.currentTarget.style.transform = 'translateY(0)';
           }}
         >
-          🎓 Start MCP Tour
+          <GraduationCap size={20} />
+          Start MCP Tour
         </button>
       ) : (
         <button
@@ -45,10 +48,14 @@ export function TourButton() {
             border: 'none',
             borderRadius: '4px',
             cursor: 'pointer',
-            fontSize: '14px'
+            fontSize: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
           }}
         >
-          🔄 Restart Tour
+          <RotateCcw size={16} />
+          Restart Tour
         </button>
       )}
       

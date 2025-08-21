@@ -47,8 +47,8 @@ export function TourOverlay() {
       if (targetElement) {
         const rect = targetElement.getBoundingClientRect();
         const newTargetPosition = {
-          top: rect.top + window.scrollY,
-          left: rect.left + window.scrollX,
+          top: rect.top,
+          left: rect.left,
           width: Math.max(rect.width, 10), // Minimum width
           height: Math.max(rect.height, 10) // Minimum height
         };
@@ -93,21 +93,54 @@ export function TourOverlay() {
     updatePositions();
     window.addEventListener('resize', updatePositions);
     window.addEventListener('scroll', updatePositions);
+    
+    // Add scroll listeners to scrollable containers
+    const scrollableContainers = document.querySelectorAll('[style*="overflow-y: auto"], [style*="overflowY: auto"]');
+    scrollableContainers.forEach(container => {
+      container.addEventListener('scroll', updatePositions);
+    });
 
     return () => {
       window.removeEventListener('resize', updatePositions);
       window.removeEventListener('scroll', updatePositions);
+      scrollableContainers.forEach(container => {
+        container.removeEventListener('scroll', updatePositions);
+      });
     };
   }, [isActive, currentStep, steps]);
 
-  // Scroll target into view
+  // Scroll target into view within its scrollable container
   useEffect(() => {
     if (!isActive || !steps[currentStep]) return;
 
     const step = steps[currentStep];
     const targetElement = document.querySelector(step.target);
     if (targetElement) {
-      targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Find the scrollable parent container
+      let scrollableParent = targetElement.parentElement;
+      while (scrollableParent && scrollableParent !== document.body) {
+        const overflowY = window.getComputedStyle(scrollableParent).overflowY;
+        if (overflowY === 'auto' || overflowY === 'scroll') {
+          break;
+        }
+        scrollableParent = scrollableParent.parentElement;
+      }
+      
+      if (scrollableParent && scrollableParent !== document.body) {
+        // Scroll within the container
+        const containerRect = scrollableParent.getBoundingClientRect();
+        const targetRect = targetElement.getBoundingClientRect();
+        const relativeTop = targetRect.top - containerRect.top;
+        const containerHeight = containerRect.height;
+        
+        if (relativeTop < 0 || relativeTop > containerHeight - targetRect.height) {
+          const scrollTop = scrollableParent.scrollTop + relativeTop - (containerHeight / 2) + (targetRect.height / 2);
+          scrollableParent.scrollTo({ top: scrollTop, behavior: 'smooth' });
+        }
+      } else {
+        // Fallback to default scroll behavior if no scrollable container found
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
     }
   }, [isActive, currentStep, steps]);
 
@@ -125,7 +158,7 @@ export function TourOverlay() {
           top: 0,
           left: 0,
           right: 0,
-          height: targetPosition.top - 8,
+          height: Math.max(0, targetPosition.top - 8),
           backgroundColor: 'rgba(0, 0, 0, 0.6)',
           zIndex: 9998,
           pointerEvents: 'auto'
@@ -138,7 +171,7 @@ export function TourOverlay() {
           position: 'fixed',
           top: targetPosition.top - 8,
           left: 0,
-          width: targetPosition.left - 8,
+          width: Math.max(0, targetPosition.left - 8),
           height: targetPosition.height + 16,
           backgroundColor: 'rgba(0, 0, 0, 0.6)',
           zIndex: 9998,
