@@ -123,6 +123,70 @@ async function writePlan(plan: DailyPlan): Promise<void> {
   await fs.writeFile(dataFile, JSON.stringify(plan, null, 2));
 }
 
+function categorizeTask(text: string): 'morning' | 'afternoon' | 'evening' | undefined {
+  const lowerText = text.toLowerCase();
+  
+  // Morning keywords and patterns
+  const morningKeywords = [
+    'breakfast', 'coffee', 'morning', 'wake up', 'shower', 'exercise', 'gym',
+    'jog', 'run', 'meditation', 'yoga', 'check email', 'review', 'plan day',
+    'morning routine', 'get ready', 'commute', 'early', 'dawn', 'sunrise'
+  ];
+  
+  // Afternoon keywords and patterns
+  const afternoonKeywords = [
+    'lunch', 'meeting', 'work', 'call', 'appointment', 'errands', 'shopping',
+    'grocery', 'bank', 'office', 'project', 'deadline', 'presentation',
+    'conference', 'interview', 'doctor', 'dentist', 'pickup', 'drop off'
+  ];
+  
+  // Evening keywords and patterns
+  const eveningKeywords = [
+    'dinner', 'cook', 'evening', 'night', 'after work', 'relax', 'unwind',
+    'watch', 'movie', 'tv', 'read', 'book', 'family time', 'date',
+    'friends', 'bar', 'restaurant', 'late', 'sunset', 'bedtime', 'sleep'
+  ];
+  
+  // Check for explicit lunch mention first
+  if (lowerText.includes('lunch')) {
+    return 'afternoon';
+  }
+  
+  // Check for time-specific patterns (e.g., "at 7am", "in the morning")
+  if (lowerText.includes('am') || lowerText.includes('morning') || 
+      lowerText.match(/\b[6-9]\s*(:|am|\s*am)/)) {
+    return 'morning';
+  }
+  
+  if (lowerText.includes('pm') && (lowerText.includes('6') || lowerText.includes('7') || 
+      lowerText.includes('8') || lowerText.includes('9') || lowerText.includes('10'))) {
+    return 'evening';
+  }
+  
+  if (lowerText.includes('evening') || lowerText.includes('night') || 
+      lowerText.includes('tonight')) {
+    return 'evening';
+  }
+  
+  // Count keyword matches for each time slot
+  const morningScore = morningKeywords.filter(keyword => lowerText.includes(keyword)).length;
+  const afternoonScore = afternoonKeywords.filter(keyword => lowerText.includes(keyword)).length;
+  const eveningScore = eveningKeywords.filter(keyword => lowerText.includes(keyword)).length;
+  
+  // Return the time slot with the highest score, or undefined if all scores are 0
+  if (morningScore === 0 && afternoonScore === 0 && eveningScore === 0) {
+    return undefined;
+  }
+  
+  if (morningScore >= afternoonScore && morningScore >= eveningScore) {
+    return 'morning';
+  } else if (afternoonScore >= eveningScore) {
+    return 'afternoon';
+  } else {
+    return 'evening';
+  }
+}
+
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse
@@ -192,6 +256,17 @@ export default async function handler(
                     taskId: { type: 'string', description: 'Task ID to archive' },
                   },
                   required: ['taskId'],
+                },
+              },
+              {
+                name: 'smart_add_task',
+                description: 'Add a task using natural language with automatic time slot categorization',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    text: { type: 'string', description: 'Natural language task description' },
+                  },
+                  required: ['text'],
                 },
               },
             ],
@@ -652,6 +727,17 @@ Format as a simple numbered list.`;
                   required: ['taskId'],
                 },
               },
+              {
+                name: 'smart_add_task',
+                description: 'Add a task using natural language with automatic time slot categorization',
+                inputSchema: {
+                  type: 'object',
+                  properties: {
+                    text: { type: 'string', description: 'Natural language task description' },
+                  },
+                  required: ['text'],
+                },
+              },
             ]
           };
         } else {
@@ -757,6 +843,27 @@ Format as a simple numbered list.`;
                 {
                   type: 'text',
                   text: `Archived task: ${task.text}`,
+                },
+              ],
+            };
+          } else if (toolName === 'smart_add_task') {
+            const plan = await readPlan();
+            const timeSlot = categorizeTask(args.text);
+            const newTask: Task = {
+              id: Date.now().toString(),
+              text: args.text,
+              completed: false,
+              timeSlot: timeSlot,
+            };
+            plan.tasks.push(newTask);
+            await writePlan(plan);
+            
+            const timeSlotText = timeSlot ? ` (automatically categorized as ${timeSlot})` : ' (no specific time detected)';
+            result = {
+              content: [
+                {
+                  type: 'text',
+                  text: `Added task: ${newTask.text}${timeSlotText}`,
                 },
               ],
             };

@@ -69,6 +69,7 @@ const callPrompt = async (promptName: string, args: any = {}) => {
 function DashboardContent() {
   const [newTaskText, setNewTaskText] = useState('');
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('');
+  const [naturalLanguageTask, setNaturalLanguageTask] = useState('');
   const [loading, setLoading] = useState(false);
   const [currentAction, setCurrentAction] = useState('');
   const [simulatedError, setSimulatedError] = useState(false);
@@ -147,6 +148,31 @@ function DashboardContent() {
       await mutate('/api/mcp/resources/schedule');
     } catch (error) {
       console.error('Failed to archive task:', error);
+    } finally {
+      setLoading(false);
+      setCurrentAction('');
+    }
+  };
+
+  const handleSmartAddTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!naturalLanguageTask.trim()) return;
+
+    setLoading(true);
+    setCurrentAction('Calling tool: smart_add_task');
+    try {
+      await callTool('smart_add_task', {
+        text: naturalLanguageTask,
+      });
+      setNaturalLanguageTask('');
+      await mutate('/api/mcp/resources/schedule');
+      
+      // Complete tour action if waiting
+      if (waitingForAction) {
+        completeAction();
+      }
+    } catch (error) {
+      console.error('Failed to add smart task:', error);
     } finally {
       setLoading(false);
       setCurrentAction('');
@@ -263,6 +289,46 @@ function DashboardContent() {
                 {loading ? 'Adding...' : 'Add Task'}
               </button>
             </div>
+          </form>
+
+          <form className="tour-smart-task-form" onSubmit={handleSmartAddTask} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#e8f5e8', borderRadius: '5px', border: '2px solid #4CAF50' }}>
+            <h3 style={{ margin: '0 0 10px 0', color: '#2E7D32', fontSize: '16px' }}>
+              🤖 Smart Task Creation
+            </h3>
+            <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#666' }}>
+              Just describe what you want to do naturally, and I'll automatically categorize it!
+            </p>
+            <div style={{ marginBottom: '10px' }}>
+              <input
+                type="text"
+                value={naturalLanguageTask}
+                onChange={(e) => setNaturalLanguageTask(e.target.value)}
+                placeholder="e.g., make breakfast, call mom, evening workout..."
+                disabled={loading}
+                style={{ 
+                  width: '100%', 
+                  padding: '8px', 
+                  fontSize: '16px',
+                  border: '1px solid #4CAF50',
+                  borderRadius: '3px'
+                }}
+              />
+            </div>
+            <button 
+              type="submit" 
+              disabled={loading || !naturalLanguageTask.trim()}
+              style={{ 
+                padding: '8px 16px', 
+                backgroundColor: '#4CAF50', 
+                color: 'white', 
+                border: 'none', 
+                borderRadius: '3px',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              {loading ? 'Adding...' : '✨ Add Smart Task'}
+            </button>
           </form>
 
           {schedule.unscheduled.length > 0 && (
