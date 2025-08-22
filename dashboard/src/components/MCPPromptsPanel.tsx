@@ -5,6 +5,7 @@ interface Task {
   id: string;
   text: string;
   completed: boolean;
+  archived?: boolean;
   timeSlot?: 'morning' | 'afternoon' | 'evening';
 }
 
@@ -28,6 +29,12 @@ interface MCPPromptsPanelProps {
   setCurrentAction: (action: string) => void;
   schedule: Schedule;
   onScheduleUpdate?: () => void;
+}
+
+interface TaskMatchResult {
+  task: Task | null;
+  confidence: 'exact' | 'high' | 'medium' | 'low' | 'ambiguous' | 'none';
+  matches?: Task[];
 }
 
 const callPrompt = async (promptName: string, args: any = {}) => {
@@ -139,30 +146,214 @@ export const MCPPromptsPanel = ({ currentAction, setCurrentAction, schedule, onS
       }
     }
 
-    // Detect completion requests
-    const completeTaskPattern = /(?:complete|mark as done|finish|done)\s+(?:task\s+)?(?:with\s+)?(?:id\s+)?(.+)/i;
-    const completeMatch = userMessage.match(completeTaskPattern);
-    if (completeMatch && completeMatch[1]) {
-      const taskIdentifier = completeMatch[1].trim();
-      
-      // Find task by text or ID
+    // Detect archive all completed tasks requests
+    if (lowerMessage.includes('archive all') && (lowerMessage.includes('completed') || lowerMessage.includes('finished') || lowerMessage.includes('done'))) {
       const allTasks = [...schedule.morning, ...schedule.afternoon, ...schedule.evening, ...schedule.unscheduled];
-      const task = allTasks.find(t => 
-        t.text.toLowerCase().includes(taskIdentifier.toLowerCase()) || 
-        t.id === taskIdentifier
-      );
+      const completedTasks = allTasks.filter(t => t.completed && !t.archived);
       
-      if (task) {
+      if (completedTasks.length === 0) {
+        return '📋 No completed tasks to archive. All your completed tasks are already archived or you have no completed tasks.';
+      }
+
+      try {
+        setCurrentAction('Archiving all completed tasks...');
+        let archivedCount = 0;
+        let errors: string[] = [];
+
+        // Archive each completed task
+        for (const task of completedTasks) {
+          try {
+            await callTool('archive_task', { taskId: task.id });
+            archivedCount++;
+          } catch (error) {
+            errors.push(`Failed to archive "${task.text}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
+        }
+
+        if (onScheduleUpdate) onScheduleUpdate();
+
+        let result = `✅ Successfully archived ${archivedCount} completed task${archivedCount !== 1 ? 's' : ''}!`;
+        
+        if (errors.length > 0) {
+          result += `\n\n⚠️ Some tasks could not be archived:\n${errors.join('\n')}`;
+        }
+
+        return result;
+
+      } catch (error) {
+        return `❌ Failed to archive completed tasks: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      }
+    }
+
+    // Detect requests to list available tasks
+    if (lowerMessage.includes('list tasks') || lowerMessage.includes('show tasks') || lowerMessage.includes('what tasks') || 
+        lowerMessage.includes('available tasks') || lowerMessage.includes('current tasks') || lowerMessage.includes('my tasks')) {
+      const allTasks = [...schedule.morning, ...schedule.afternoon, ...schedule.evening, ...schedule.unscheduled];
+      const incompleteTasks = allTasks.filter(t => !t.completed);
+      const completedTasks = allTasks.filter(t => t.completed);
+
+      if (allTasks.length === 0) {
+        return '📋 You have no tasks currently planned. Try saying "Add task: [description]" to create one!';
+      }
+
+      let response = '📋 **Your Current Tasks:**\n\n';
+      
+      if (incompleteTasks.length > 0) {
+        response += '**🔄 Pending Tasks:**\n';
+        incompleteTasks.forEach((task, index) => {
+          const timeSlot = task.timeSlot ? ` (${task.timeSlot})` : ' (unscheduled)';
+          response += `${index + 1}. ${task.text}${timeSlot}\n`;
+        });
+        response += '\n';
+      }
+
+      if (completedTasks.length > 0) {
+        response += '**✅ Completed Tasks:**\n';
+        completedTasks.forEach(task => {
+          const timeSlot = task.timeSlot ? ` (${task.timeSlot})` : ' (unscheduled)';
+          response += `• ${task.text}${timeSlot}\n`;
+        });
+        response += '\n';
+      }
+
+      response += '💡 **Tips:** \n• Say "complete [task name]" to mark a task as done\n• Say "complete task 1" to complete by number\n• Say "help" for more commands';
+      return response;
+    }
+
+    // Detect help requests
+    if (lowerMessage.includes('help') || lowerMessage.includes('commands') || lowerMessage.includes('what can you do')) {
+      return `🤖 **Assistant Commands:**
+
+**Task Management:**
+• "Add task: [description]" - Create a new task with smart categorization
+• "Complete [task name]" - Mark a task as completed
+• "Plan my day" - Organize unscheduled tasks into time slots
+• "Archive all completed tasks" - Archive all finished tasks
+
+**Information:**
+• "List tasks" or "Show my tasks" - See all current tasks
+• "What tasks do I have?" - View pending and completed tasks
+
+**Examples:**
+• "Add task: morning coffee"
+• "Complete presentation"
+• "Finished lunch meeting"
+• "Archive all finished tasks"
+• "Show me my evening tasks"
+
+**Natural Language:**
+I understand various phrasings - just speak naturally! I can also provide productivity advice and tips when you ask questions.`;
+    }
+
+    // Detect numbered task completion (e.g., "complete task 1", "done with task 2")
+    const numberedTaskPattern = /(?:complete|mark as done|finish|done)(?:\s+with)?\s+task\s+(\d+)/i;
+    const numberedMatch = userMessage.match(numberedTaskPattern);
+    if (numberedMatch) {
+      const taskNumber = parseInt(numberedMatch[1]) - 1; // Convert to 0-based index
+      const allTasks = [...schedule.morning, ...schedule.afternoon, ...schedule.evening, ...schedule.unscheduled]
+        .filter(t => !t.completed);
+      
+      if (taskNumber >= 0 && taskNumber < allTasks.length) {
+        const task = allTasks[taskNumber];
         try {
           setCurrentAction('Calling tool: complete_task');
           const result = await callTool('complete_task', { taskId: task.id });
           if (onScheduleUpdate) onScheduleUpdate();
-          return `✅ ${result.content[0].text}`;
+          return `✅ ${result.content[0].text} (selected by number)`;
         } catch (error) {
           return `❌ Failed to complete task: ${error instanceof Error ? error.message : 'Unknown error'}`;
         }
       } else {
-        return `❌ Could not find a task matching "${taskIdentifier}". Please be more specific or use the exact task name.`;
+        const taskCount = allTasks.length;
+        return `❌ Invalid task number. You have ${taskCount} incomplete task${taskCount !== 1 ? 's' : ''}. Try "list tasks" to see them numbered.`;
+      }
+    }
+
+    // Detect completion requests
+    const completeTaskPatterns = [
+      /(?:complete|mark as done|finish|done)\s+(?:task\s+)?(?:with\s+)?(?:id\s+)?(.+)/i,
+      /(?:mark|set)\s+(.+?)\s+(?:as\s+)?(?:complete|completed|done)/i,
+      /(.+?)\s+(?:is\s+)?(?:complete|completed|done|finished)/i,
+      /(?:finished|completed)\s+(.+)/i,
+      /(?:check off|tick off)\s+(.+)/i,
+      /(.+)\s+(?:task\s+)?(?:is\s+)?(?:now\s+)?(?:finished|completed)/i
+    ];
+
+    for (const pattern of completeTaskPatterns) {
+      const completeMatch = userMessage.match(pattern);
+      if (completeMatch && completeMatch[1]) {
+        const taskIdentifier = completeMatch[1].trim();
+        
+        // Get all incomplete tasks
+        const allTasks = [...schedule.morning, ...schedule.afternoon, ...schedule.evening, ...schedule.unscheduled]
+          .filter(t => !t.completed);
+        
+        // Enhanced matching algorithm
+        const findBestMatch = (identifier: string, tasks: Task[]): TaskMatchResult => {
+          const lowerIdentifier = identifier.toLowerCase();
+          
+          // 1. Exact match
+          let exactMatch = tasks.find(t => t.text.toLowerCase() === lowerIdentifier);
+          if (exactMatch) return { task: exactMatch, confidence: 'exact' };
+          
+          // 2. Starts with identifier
+          let startsWithMatch = tasks.find(t => t.text.toLowerCase().startsWith(lowerIdentifier));
+          if (startsWithMatch) return { task: startsWithMatch, confidence: 'high' };
+          
+          // 3. Contains all words from identifier
+          const identifierWords = lowerIdentifier.split(/\s+/);
+          let containsAllWords = tasks.find(t => {
+            const taskText = t.text.toLowerCase();
+            return identifierWords.every(word => taskText.includes(word));
+          });
+          if (containsAllWords) return { task: containsAllWords, confidence: 'high' };
+          
+          // 4. Contains identifier as substring
+          let containsMatch = tasks.find(t => t.text.toLowerCase().includes(lowerIdentifier));
+          if (containsMatch) return { task: containsMatch, confidence: 'medium' };
+          
+          // 5. Fuzzy match - contains any word from identifier
+          const fuzzyMatches = tasks.filter(t => {
+            const taskText = t.text.toLowerCase();
+            return identifierWords.some(word => word.length > 2 && taskText.includes(word));
+          });
+          
+          if (fuzzyMatches.length === 1) {
+            return { task: fuzzyMatches[0], confidence: 'low' };
+          } else if (fuzzyMatches.length > 1) {
+            return { task: null, confidence: 'ambiguous', matches: fuzzyMatches };
+          }
+          
+          return { task: null, confidence: 'none' };
+        };
+
+        const matchResult = findBestMatch(taskIdentifier, allTasks);
+        
+        if (matchResult.task) {
+          try {
+            setCurrentAction('Calling tool: complete_task');
+            const result = await callTool('complete_task', { taskId: matchResult.task.id });
+            if (onScheduleUpdate) onScheduleUpdate();
+            
+            const confidenceNote = matchResult.confidence === 'exact' ? '' : 
+              matchResult.confidence === 'high' ? ' (matched closely)' :
+              matchResult.confidence === 'medium' ? ' (partial match)' :
+              ' (fuzzy match - please verify)';
+            
+            return `✅ ${result.content[0].text}${confidenceNote}`;
+          } catch (error) {
+            return `❌ Failed to complete task: ${error instanceof Error ? error.message : 'Unknown error'}`;
+          }
+        } else if (matchResult.confidence === 'ambiguous') {
+          const taskList = matchResult.matches!.map((t, i) => `${i + 1}. ${t.text}`).join('\n');
+          return `🤔 Found multiple tasks matching "${taskIdentifier}":\n\n${taskList}\n\nPlease be more specific by using more words from the task name, or say "complete task 1" to complete the first one.`;
+        } else {
+          // Show available tasks for completion
+          const availableTasks = allTasks.slice(0, 5).map(t => `• ${t.text}`).join('\n');
+          const moreTasksNote = allTasks.length > 5 ? `\n... and ${allTasks.length - 5} more tasks` : '';
+          
+          return `❌ Could not find a task matching "${taskIdentifier}"\n\n📋 Available tasks to complete:\n${availableTasks}${moreTasksNote}\n\nTip: Use key words from the task name for better matching.`;
+        }
       }
     }
 
