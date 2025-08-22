@@ -12,5 +12,8 @@
   },
   "keywords": ["mcp", "model-context-protocol", "learning-tool", "dashboard", "anthropic"],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "next": "latest"
+  }
 }
