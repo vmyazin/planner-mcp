@@ -87,13 +87,25 @@ function DashboardContent() {
     ? JSON.parse(scheduleData.contents[0].text)
     : { morning: [], afternoon: [], evening: [], unscheduled: [] };
 
-  // Filter tasks for the selected date
+  // Filter tasks for the selected date - true day separation
   const selectedDateStr = selectedDate.toISOString().split('T')[0];
+  const todayStr = new Date().toISOString().split('T')[0];
+  
   const schedule: Schedule = {
-    morning: allSchedule.morning.filter(task => !task.date || task.date === selectedDateStr),
-    afternoon: allSchedule.afternoon.filter(task => !task.date || task.date === selectedDateStr),
-    evening: allSchedule.evening.filter(task => !task.date || task.date === selectedDateStr),
-    unscheduled: allSchedule.unscheduled.filter(task => !task.date || task.date === selectedDateStr)
+    morning: allSchedule.morning.filter(task => {
+      // Tasks without date show only on today (for backward compatibility during migration)
+      // Tasks with date show only on their specific day
+      return task.date === selectedDateStr || (!task.date && selectedDateStr === todayStr);
+    }),
+    afternoon: allSchedule.afternoon.filter(task => {
+      return task.date === selectedDateStr || (!task.date && selectedDateStr === todayStr);
+    }),
+    evening: allSchedule.evening.filter(task => {
+      return task.date === selectedDateStr || (!task.date && selectedDateStr === todayStr);
+    }),
+    unscheduled: allSchedule.unscheduled.filter(task => {
+      return task.date === selectedDateStr || (!task.date && selectedDateStr === todayStr);
+    })
   };
 
   const handleAddTaskForDate = async (text: string, timeSlot?: string, targetDate?: Date) => {

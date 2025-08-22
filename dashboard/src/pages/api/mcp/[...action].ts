@@ -25,6 +25,7 @@ interface Task {
   completed: boolean;
   archived?: boolean;
   timeSlot?: 'morning' | 'afternoon' | 'evening';
+  date?: string; // Date in YYYY-MM-DD format
 }
 
 interface DailyPlan {
@@ -52,7 +53,7 @@ async function getMcpClient(): Promise<Client> {
     return mcpClient;
   }
 
-  const isVercel = process.env.VERCEL === '1';
+  const isVercel = process.env.VERCEL === '1' || true; // Force inline implementation for local dev
   
   if (isVercel) {
     // On Vercel, we can't spawn separate processes, so we'll return a mock client
@@ -91,7 +92,7 @@ async function getMcpClient(): Promise<Client> {
 
 // Direct MCP implementation for Vercel (serverless environment)
 const getDataFilePath = () => {
-  const isVercel = process.env.VERCEL === '1';
+  const isVercel = process.env.VERCEL === '1' || true; // Force inline implementation for local dev
   if (isVercel) {
     // On Vercel, use /tmp for file storage (ephemeral)
     return '/tmp/daily-plan.json';
@@ -115,7 +116,25 @@ async function readPlan(): Promise<DailyPlan> {
   await ensureDataFile();
   const dataFile = getDataFilePath();
   const data = await fs.readFile(dataFile, 'utf-8');
-  return JSON.parse(data);
+  const plan = JSON.parse(data);
+  
+  // Migration: Assign today's date to tasks without a date field
+  const today = new Date().toISOString().split('T')[0];
+  let needsUpdate = false;
+  
+  for (const task of plan.tasks) {
+    if (!task.date) {
+      task.date = today;
+      needsUpdate = true;
+    }
+  }
+  
+  // Write back the migrated plan if any tasks were updated
+  if (needsUpdate) {
+    await fs.writeFile(dataFile, JSON.stringify(plan, null, 2));
+  }
+  
+  return plan;
 }
 
 async function writePlan(plan: DailyPlan): Promise<void> {
@@ -193,7 +212,7 @@ export default async function handler(
 ) {
   try {
     const action = req.query.action as string[];
-    const isVercel = process.env.VERCEL === '1';
+    const isVercel = process.env.VERCEL === '1' || true; // Force inline implementation for local dev
 
     // Special endpoint for fetching logs
     if (req.method === 'GET' && action[0] === 'logs') {
@@ -644,12 +663,14 @@ Format as a simple numbered list.`;
                 ],
               };
             } else if (resourceUri === 'schedule') {
-              const activeTasks = plan.tasks.filter(t => !t.archived);
+              // Get all tasks (for frontend to handle filtering by date)
+              // This maintains compatibility while enabling day-specific filtering
+              const allTasks = plan.tasks.filter(t => !t.archived);
               const schedule = {
-                morning: activeTasks.filter(t => t.timeSlot === 'morning'),
-                afternoon: activeTasks.filter(t => t.timeSlot === 'afternoon'),
-                evening: activeTasks.filter(t => t.timeSlot === 'evening'),
-                unscheduled: activeTasks.filter(t => !t.timeSlot),
+                morning: allTasks.filter(t => t.timeSlot === 'morning'),
+                afternoon: allTasks.filter(t => t.timeSlot === 'afternoon'),
+                evening: allTasks.filter(t => t.timeSlot === 'evening'),
+                unscheduled: allTasks.filter(t => !t.timeSlot),
               };
               result = {
                 contents: [
@@ -799,19 +820,23 @@ Format as a simple numbered list.`;
           
           if (toolName === 'add_task') {
             const plan = await readPlan();
+            const taskDate = args.date || new Date().toISOString().split('T')[0]; // Default to today if no date provided
             const newTask: Task = {
               id: Date.now().toString(),
               text: args.text,
               completed: false,
               timeSlot: args.timeSlot,
+              date: taskDate,
             };
             plan.tasks.push(newTask);
             await writePlan(plan);
+            
+            const dateText = args.date ? ` for ${taskDate}` : '';
             result = {
               content: [
                 {
                   type: 'text',
-                  text: `Added task: ${newTask.text}`,
+                  text: `Added task: ${newTask.text}${dateText}`,
                 },
               ],
             };
@@ -870,22 +895,81 @@ Format as a simple numbered list.`;
             };
           } else if (toolName === 'smart_add_task') {
             const plan = await readPlan();
-            const timeSlot = categorizeTask(args.text);
+            
+            // Parse natural language commands inline
+            let taskText = args.text;
+            let timeSlot = categorizeTask(args.text);
+            let taskDate = args.date || new Date().toISOString().split('T')[0];
+            
+            // Check if it's a natural language command with day specification
+            const normalizedInput = args.text.toLowerCase().trim();
+            const addTaskPatterns = [
+              /^add task for (.+?):\s*(.+)$/,
+              /^task for (.+?):\s*(.+)$/,
+              /^(.+?) task:\s*(.+)$/
+            ];
+            
+            for (const pattern of addTaskPatterns) {
+              const match = normalizedInput.match(pattern);
+              if (match) {
+                const dayTimeSpec = match[1];
+                taskText = match[2].trim();
+                
+                // Parse day and calculate date
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const todayDayOfWeek = today.getDay();
+                
+                const dayPatterns = {
+                  'monday': 1, 'tuesday': 2, 'wednesday': 3, 'thursday': 4, 'friday': 5, 'saturday': 6, 'sunday': 0,
+                  'mon': 1, 'tue': 2, 'wed': 3, 'thu': 4, 'fri': 5, 'sat': 6, 'sun': 0
+                };
+                
+                // Check for specific weekdays
+                for (const [dayName, dayOfWeek] of Object.entries(dayPatterns)) {
+                  if (dayTimeSpec.includes(dayName)) {
+                    let daysUntilTarget = dayOfWeek - todayDayOfWeek;
+                    if (daysUntilTarget <= 0) {
+                      daysUntilTarget += 7; // Next week
+                    }
+                    
+                    const targetDate = new Date(today);
+                    targetDate.setDate(today.getDate() + daysUntilTarget);
+                    taskDate = targetDate.toISOString().split('T')[0];
+                    break;
+                  }
+                }
+                
+                // Check for time slots
+                if (dayTimeSpec.includes('morning') || dayTimeSpec.includes('am')) {
+                  timeSlot = 'morning';
+                } else if (dayTimeSpec.includes('afternoon') || dayTimeSpec.includes('pm')) {
+                  timeSlot = 'afternoon';
+                } else if (dayTimeSpec.includes('evening') || dayTimeSpec.includes('night')) {
+                  timeSlot = 'evening';
+                }
+                
+                break;
+              }
+            }
+            
             const newTask: Task = {
               id: Date.now().toString(),
-              text: args.text,
+              text: taskText,
               completed: false,
               timeSlot: timeSlot,
+              date: taskDate,
             };
             plan.tasks.push(newTask);
             await writePlan(plan);
             
             const timeSlotText = timeSlot ? ` (automatically categorized as ${timeSlot})` : ' (no specific time detected)';
+            const dateText = taskDate !== new Date().toISOString().split('T')[0] ? ` for ${taskDate}` : '';
             result = {
               content: [
                 {
                   type: 'text',
-                  text: `Added task: ${newTask.text}${timeSlotText}`,
+                  text: `Added task: ${newTask.text}${timeSlotText}${dateText}`,
                 },
               ],
             };
