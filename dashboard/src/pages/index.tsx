@@ -4,7 +4,7 @@ import { Target } from 'lucide-react';
 import { MCPLogEntry } from './api/mcp/[...action]';
 import { TourProvider, useTour } from '../contexts/TourContext';
 import { TourOverlay } from '../components/TourOverlay';
-import { WelcomeModal } from '../components/WelcomeModal';
+import { TimedWelcomeModal } from '../components/TimedWelcomeModal';
 import { DashboardHeader } from '../components/DashboardHeader';
 import { TaskList } from '../components/TaskList';
 import { MCPProtocolInspector } from '../components/MCPProtocolInspector';
@@ -72,7 +72,6 @@ function DashboardContent() {
   const [loading, setLoading] = useState(false);
   const [currentAction, setCurrentAction] = useState('');
   const [simulatedError, setSimulatedError] = useState(false);
-  const [showWelcomeModal, setShowWelcomeModal] = useState(true);
   const { completeAction, waitingForAction, startTour, isActive, nextStep } = useTour();
 
   const { data: scheduleData, error } = useSWR<{ contents: [{ text: string }] }>(
@@ -343,9 +342,9 @@ function DashboardContent() {
       )}
 
       <TourOverlay />
-      <WelcomeModal 
-        isOpen={showWelcomeModal} 
-        onClose={() => setShowWelcomeModal(false)} 
+      <TimedWelcomeModal 
+        intervalDays={3}
+        debug={process.env.NODE_ENV === 'development'}
       />
     </div>
   );
