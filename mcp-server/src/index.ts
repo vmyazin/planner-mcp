@@ -160,11 +160,11 @@ class PlannerServer {
         },
         {
           name: 'complete_task',
-          description: 'Mark a task as completed',
+          description: 'Toggle task completion status (mark as completed or uncompleted)',
           inputSchema: {
             type: 'object',
             properties: {
-              taskId: { type: 'string', description: 'Task ID to complete' },
+              taskId: { type: 'string', description: 'Task ID to toggle completion' },
             },
             required: ['taskId'],
           },
@@ -221,13 +221,13 @@ class PlannerServer {
         if (!task) {
           throw new Error(`Task not found: ${(args as any).taskId}`);
         }
-        task.completed = true;
+        task.completed = !task.completed;
         await this.writePlan(plan);
         return {
           content: [
             {
               type: 'text',
-              text: `Completed task: ${task.text}`,
+              text: task.completed ? `Completed task: ${task.text}` : `Uncompleted task: ${task.text}`,
             },
           ],
         };

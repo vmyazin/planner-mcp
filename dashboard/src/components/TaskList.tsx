@@ -44,13 +44,32 @@ export const TaskList = ({ tasks, title, onCompleteTask, onArchiveTask, loading 
               justifyContent: 'space-between',
               opacity: task.completed ? 0.6 : 1
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
+              <div 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  flex: 1,
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  padding: '4px',
+                  borderRadius: '4px',
+                  transition: 'background-color 0.2s'
+                }}
+                onClick={() => !loading && onCompleteTask(task.id)}
+                onMouseEnter={(e) => {
+                  if (!loading) {
+                    e.currentTarget.style.backgroundColor = '#f5f5f5';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={task.completed}
-                  onChange={() => onCompleteTask(task.id)}
+                  readOnly
                   disabled={loading}
-                  style={{ marginRight: '10px' }}
+                  style={{ marginRight: '10px', pointerEvents: 'none' }}
                 />
                 <span style={{ textDecoration: task.completed ? 'line-through' : 'none' }}>{task.text}</span>
               </div>
