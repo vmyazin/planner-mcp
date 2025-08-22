@@ -53,3 +53,12 @@ Visit http://localhost:3000 and start learning MCP by:
 
 Perfect for developers new to MCP who want hands-on learning!
 
+## 🌐 Deploy to Vercel
+
+```bash
+# Deploy to production
+vercel env add ANTHROPIC_API_KEY  # Add your API key
+vercel --prod
+```
+
+The project is configured for one-click deployment with both MCP server and dashboard.
