@@ -1,10 +1,5 @@
 {
   "buildCommand": "cd dashboard && npm run build",
   "installCommand": "npm install && cd dashboard && npm install && cd ../mcp-server && npm install && npm run build",
-  "outputDirectory": "dashboard/.next",
-  "functions": {
-    "dashboard/src/pages/api/**/*.ts": {
-      "includeFiles": "mcp-server/dist/**"
-    }
-  }
+  "outputDirectory": "dashboard/.next"
 }
