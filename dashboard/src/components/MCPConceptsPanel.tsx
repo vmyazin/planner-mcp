@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Lightbulb } from 'lucide-react';
+import { Lightbulb, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface MCPConceptsPanelProps {
   currentAction: string;
@@ -7,6 +7,7 @@ interface MCPConceptsPanelProps {
 
 export const MCPConceptsPanel = ({ currentAction }: MCPConceptsPanelProps) => {
   const [activeTab, setActiveTab] = useState('resources');
+  const [isCollapsed, setIsCollapsed] = useState(true);
 
   const concepts = {
     resources: {
@@ -32,61 +33,83 @@ export const MCPConceptsPanel = ({ currentAction }: MCPConceptsPanelProps) => {
     }
   };
 
+  const activeConcept = concepts[activeTab as keyof typeof concepts];
+  const hasLiveExample = Object.values(concepts).some(concept => concept.liveExample);
+
   return (
-    <div className="tour-concepts-panel" style={{ border: '1px solid #ccc', borderRadius: '5px', height: '250px', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '10px', backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+    <div className="tour-concepts-panel" style={{ border: '1px solid #ccc', borderRadius: '5px', height: isCollapsed ? 'auto' : '250px', display: 'flex', flexDirection: 'column' }}>
+      <div 
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        style={{ 
+          padding: '10px', 
+          backgroundColor: '#f5f5f5', 
+          borderBottom: isCollapsed ? 'none' : '1px solid #ccc', 
+          fontWeight: 'bold', 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '8px',
+          cursor: 'pointer',
+          userSelect: 'none'
+        }}
+      >
         <Lightbulb size={16} />
         Interactive MCP Concepts
+        {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
       </div>
-      <div style={{ display: 'flex', borderBottom: '1px solid #ccc' }}>
-        {Object.entries(concepts).map(([key, concept]) => (
-          <button
-            key={key}
-            onClick={() => setActiveTab(key)}
-            style={{
-              flex: 1,
-              padding: '8px',
-              border: 'none',
-              backgroundColor: activeTab === key ? '#2196f3' : '#f9f9f9',
-              color: activeTab === key ? 'white' : 'black',
-              cursor: 'pointer'
-            }}
-          >
-            {concept.title}
-          </button>
-        ))}
-      </div>
-      <div style={{ flex: 1, padding: '15px', overflow: 'auto' }}>
-        {(() => {
-          const concept = concepts[activeTab as keyof typeof concepts];
-          return (
-            <div>
-              <h4 style={{ margin: '0 0 10px 0', color: '#1976d2' }}>{concept.title}</h4>
-              <p style={{ margin: '0 0 8px 0', fontSize: '14px' }}>
-                <strong>What:</strong> {concept.definition}
-              </p>
-              <p style={{ margin: '0 0 8px 0', fontSize: '14px' }}>
-                <strong>Why:</strong> {concept.purpose}
-              </p>
-              <p style={{ margin: '0 0 8px 0', fontSize: '14px' }}>
-                <strong>Example:</strong> {concept.example}
-              </p>
-              {concept.liveExample && (
-                <div style={{ 
-                  padding: '8px', 
-                  backgroundColor: '#fff3e0', 
-                  border: '1px solid #ff9800', 
-                  borderRadius: '3px',
-                  fontSize: '14px',
-                  fontWeight: 'bold'
-                }}>
-                  {concept.liveExample}
+      
+      {!isCollapsed && (
+        <>
+          <div style={{ display: 'flex', borderBottom: '1px solid #ccc' }}>
+            {Object.entries(concepts).map(([key, concept]) => (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                style={{
+                  flex: 1,
+                  padding: '8px',
+                  border: 'none',
+                  backgroundColor: activeTab === key ? '#2196f3' : '#f9f9f9',
+                  color: activeTab === key ? 'white' : 'black',
+                  cursor: 'pointer'
+                }}
+              >
+                {concept.title}
+              </button>
+            ))}
+          </div>
+          <div style={{ flex: 1, padding: '15px', overflow: 'auto' }}>
+            {(() => {
+              const concept = concepts[activeTab as keyof typeof concepts];
+              return (
+                <div>
+                  <h4 style={{ margin: '0 0 10px 0', color: '#1976d2' }}>{concept.title}</h4>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '14px' }}>
+                    <strong>What:</strong> {concept.definition}
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '14px' }}>
+                    <strong>Why:</strong> {concept.purpose}
+                  </p>
+                  <p style={{ margin: '0 0 8px 0', fontSize: '14px' }}>
+                    <strong>Example:</strong> {concept.example}
+                  </p>
+                  {concept.liveExample && (
+                    <div style={{ 
+                      padding: '8px', 
+                      backgroundColor: '#fff3e0', 
+                      border: '1px solid #ff9800', 
+                      borderRadius: '3px',
+                      fontSize: '14px',
+                      fontWeight: 'bold'
+                    }}>
+                      {concept.liveExample}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })()}
-      </div>
+              );
+            })()}
+          </div>
+        </>
+      )}
     </div>
   );
 };
