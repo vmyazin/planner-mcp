@@ -11,6 +11,8 @@ When providing code changes, fixes, or implementations, always conclude with a c
 - Is ready to use with `git commit -m "message"`
 - Focuses on the "what" and "why" of the changes
 
+If you detect that there was a follow-up question or a request to improve the previously provided requirement, amend the commit with updates.
+
 ### Examples:
 
 ```
