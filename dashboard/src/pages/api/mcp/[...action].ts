@@ -34,7 +34,7 @@ interface DailyPlan {
 
 function logMCPInteraction(entry: Omit<MCPLogEntry, 'id' | 'timestamp'>) {
   const logEntry: MCPLogEntry = {
-    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+    id: Date.now().toString() + Math.random().toString(36).substring(2, 11),
     timestamp: new Date().toISOString(),
     ...entry,
   };
@@ -53,7 +53,6 @@ async function getMcpClient(): Promise<Client> {
   }
 
   const isVercel = process.env.VERCEL === '1';
-  const isProduction = process.env.NODE_ENV === 'production';
   
   if (isVercel) {
     // On Vercel, we can't spawn separate processes, so we'll return a mock client
@@ -71,7 +70,7 @@ async function getMcpClient(): Promise<Client> {
     env: {
       ...process.env,
       // Ensure ANTHROPIC_API_KEY is passed through
-      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY
+      ...(process.env.ANTHROPIC_API_KEY && { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY })
     },
     cwd: serverDir, // Set working directory to mcp-server
   });
