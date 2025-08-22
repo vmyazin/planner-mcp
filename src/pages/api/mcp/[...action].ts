@@ -35,22 +35,43 @@ async function getMcpClient(): Promise<Client> {
   }
 
   // For Vercel deployment, the mcp-server dist files are in the function bundle
-  // In development, use relative path from dashboard to mcp-server
+  // In development, use relative path
   const isProduction = process.env.NODE_ENV === 'production';
-  const serverPath = isProduction 
-    ? path.join(process.cwd(), 'mcp-server', 'dist', 'index.js')
-    : path.join(process.cwd(), '..', 'mcp-server', 'dist', 'index.js');
-  const serverDir = isProduction 
-    ? path.join(process.cwd(), 'mcp-server')
-    : path.join(process.cwd(), '..', 'mcp-server');
+  const isVercel = process.env.VERCEL === '1';
+  
+  let serverPath: string;
+  let serverDir: string;
+  
+  if (isVercel) {
+    // On Vercel, files are included via includeFiles in vercel.json
+    serverPath = path.join(process.cwd(), 'mcp-server', 'dist', 'index.js');
+    serverDir = path.join(process.cwd(), 'mcp-server');
+  } else if (isProduction) {
+    // Other production environments
+    serverPath = path.join(process.cwd(), 'mcp-server', 'dist', 'index.js');
+    serverDir = path.join(process.cwd(), 'mcp-server');
+  } else {
+    // Development - running from monorepo root
+    serverPath = path.join(process.cwd(), 'mcp-server', 'dist', 'index.js');
+    serverDir = path.join(process.cwd(), 'mcp-server');
+  }
+  
+  // Debug logging
+  console.log('MCP Server Configuration:', {
+    isProduction,
+    isVercel,
+    serverPath,
+    serverDir,
+    cwd: process.cwd()
+  });
   
   const transport = new StdioClientTransport({
-    command: 'node',
+    command: process.execPath, // Use the same node executable that's running Next.js
     args: [serverPath],
     env: {
       ...process.env,
-      // Ensure ANTHROPIC_API_KEY is passed through
-      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY
+      // Also try to load from the dashboard's .env.local
+      ...(process.env.ANTHROPIC_API_KEY && { ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY })
     },
     cwd: serverDir, // Set working directory to mcp-server
   });
@@ -83,31 +104,28 @@ export default async function handler(
 
     // Special endpoint for server status
     if (req.method === 'GET' && action[0] === 'status') {
-      let isConnected = false;
+      const isConnected = mcpClient !== null;
       let capabilities: any = null;
       
-      try {
-        // Try to establish connection if not already connected
-        const client = await getMcpClient();
-        isConnected = true;
-        
-        const tools = await client.listTools();
-        const resources = await client.listResources();
-        capabilities = {
-          tools: tools.tools || [],
-          resources: resources.resources || [],
-          prompts: [] as any[]
-        };
-        
+      if (isConnected) {
         try {
-          const prompts = await client.listPrompts();
-          capabilities.prompts = prompts.prompts || [];
+          const tools = await mcpClient!.listTools();
+          const resources = await mcpClient!.listResources();
+          capabilities = {
+            tools: tools.tools || [],
+            resources: resources.resources || [],
+            prompts: [] as any[]
+          };
+          
+          try {
+            const prompts = await mcpClient!.listPrompts();
+            capabilities.prompts = prompts.prompts || [];
+          } catch (error) {
+            // Prompts might not be supported
+          }
         } catch (error) {
-          // Prompts might not be supported
+          // Connection might be broken
         }
-      } catch (error) {
-        console.error('Status check failed:', error);
-        isConnected = false;
       }
       
       return res.json({
