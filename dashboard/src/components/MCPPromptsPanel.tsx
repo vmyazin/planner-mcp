@@ -27,6 +27,7 @@ interface MCPPromptsPanelProps {
   currentAction: string;
   setCurrentAction: (action: string) => void;
   schedule: Schedule;
+  onScheduleUpdate?: () => void;
 }
 
 const callPrompt = async (promptName: string, args: any = {}) => {
@@ -40,12 +41,26 @@ const callPrompt = async (promptName: string, args: any = {}) => {
   return response.json();
 };
 
-export const MCPPromptsPanel = ({ currentAction, setCurrentAction, schedule }: MCPPromptsPanelProps) => {
+const callTool = async (toolName: string, args: any = {}) => {
+  const response = await fetch(`/api/mcp/tools/${toolName}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Tool call failed: ${response.statusText}`);
+  }
+  
+  return response.json();
+};
+
+export const MCPPromptsPanel = ({ currentAction, setCurrentAction, schedule, onScheduleUpdate }: MCPPromptsPanelProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
       type: 'assistant',
-      content: 'Hello! I\'m your AI productivity assistant. Ask me anything about task management, productivity tips, or planning your day!',
+      content: 'Hello! I\'m your AI productivity assistant. I can help you manage tasks, provide productivity tips, and plan your day!\n\n✨ **New**: I can now execute actions directly! Try saying:\n• "Add task: make breakfast"\n• "Complete task: [task name]"\n• "Plan my day"\n• Or just ask me questions about productivity!',
       timestamp: new Date(),
     }
   ]);
@@ -87,6 +102,73 @@ export const MCPPromptsPanel = ({ currentAction, setCurrentAction, schedule }: M
     }, 50);
   };
 
+  const detectAndExecuteToolActions = async (userMessage: string): Promise<string | null> => {
+    const lowerMessage = userMessage.toLowerCase();
+    
+    // Detect task creation requests
+    const addTaskPatterns = [
+      /(?:add|create|make|new)\s+(?:a\s+)?task\s*:?\s*(.+)/i,
+      /(?:can you|please)\s+(?:add|create)\s+(?:a\s+)?task\s*:?\s*(.+)/i,
+      /(?:i need to|i want to|i should)\s+(.+)/i,
+      /(?:remind me to|help me)\s+(.+)/i
+    ];
+
+    for (const pattern of addTaskPatterns) {
+      const match = userMessage.match(pattern);
+      if (match && match[1]) {
+        try {
+          setCurrentAction('Calling tool: smart_add_task');
+          const result = await callTool('smart_add_task', { text: match[1].trim() });
+          if (onScheduleUpdate) onScheduleUpdate();
+          return `✅ ${result.content[0].text}`;
+        } catch (error) {
+          return `❌ Failed to add task: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      }
+    }
+
+    // Detect planning requests
+    if (lowerMessage.includes('plan my day') || lowerMessage.includes('organize my tasks') || lowerMessage.includes('schedule my tasks')) {
+      try {
+        setCurrentAction('Calling tool: plan_day');
+        const result = await callTool('plan_day');
+        if (onScheduleUpdate) onScheduleUpdate();
+        return `📅 ${result.content[0].text}`;
+      } catch (error) {
+        return `❌ Failed to plan day: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      }
+    }
+
+    // Detect completion requests
+    const completeTaskPattern = /(?:complete|mark as done|finish|done)\s+(?:task\s+)?(?:with\s+)?(?:id\s+)?(.+)/i;
+    const completeMatch = userMessage.match(completeTaskPattern);
+    if (completeMatch && completeMatch[1]) {
+      const taskIdentifier = completeMatch[1].trim();
+      
+      // Find task by text or ID
+      const allTasks = [...schedule.morning, ...schedule.afternoon, ...schedule.evening, ...schedule.unscheduled];
+      const task = allTasks.find(t => 
+        t.text.toLowerCase().includes(taskIdentifier.toLowerCase()) || 
+        t.id === taskIdentifier
+      );
+      
+      if (task) {
+        try {
+          setCurrentAction('Calling tool: complete_task');
+          const result = await callTool('complete_task', { taskId: task.id });
+          if (onScheduleUpdate) onScheduleUpdate();
+          return `✅ ${result.content[0].text}`;
+        } catch (error) {
+          return `❌ Failed to complete task: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      } else {
+        return `❌ Could not find a task matching "${taskIdentifier}". Please be more specific or use the exact task name.`;
+      }
+    }
+
+    return null; // No tool action detected
+  };
+
   const handleSendMessage = async () => {
     if (!currentInput.trim() || loading) return;
 
@@ -101,49 +183,66 @@ export const MCPPromptsPanel = ({ currentAction, setCurrentAction, schedule }: M
     const messageToSend = currentInput.trim();
     setCurrentInput('');
     setLoading(true);
-    setCurrentAction('Calling prompt: custom_assistant');
 
     try {
-      // Create context from recent messages
-      const conversationContext = messages.slice(-5).map(msg => 
-        `${msg.type === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
-      ).join('\n');
-
-      // Add current task data to context
-      const allTasks = [
-        ...schedule.morning,
-        ...schedule.afternoon, 
-        ...schedule.evening,
-        ...schedule.unscheduled
-      ];
-
-      const taskContext = allTasks.length > 0 ? 
-        `\n\nCurrent user's tasks:\n${allTasks.map(task => 
-          `- ${task.text} (${task.timeSlot || 'unscheduled'}) ${task.completed ? '[COMPLETED]' : '[PENDING]'}`
-        ).join('\n')}` : 
-        '\n\nThe user has no tasks currently planned.';
-
-      const enhancedContext = conversationContext + taskContext;
-
-      const result = await callPrompt('custom_assistant', {
-        message: messageToSend,
-        context: enhancedContext,
-        role: selectedRole
-      });
-
-      const responseText = result.messages?.[0]?.content?.text || 'No response received';
+      // First, try to detect and execute tool actions
+      const toolResult = await detectAndExecuteToolActions(messageToSend);
       
-      const assistantMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: '',
-        timestamp: new Date(),
-        isStreaming: true,
-      };
+      if (toolResult) {
+        // Tool action was executed, show the result
+        const toolMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: toolResult,
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, toolMessage]);
+      } else {
+        // No tool action detected, use the AI assistant
+        setCurrentAction('Calling prompt: custom_assistant');
+        
+        // Create context from recent messages
+        const conversationContext = messages.slice(-5).map(msg => 
+          `${msg.type === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+        ).join('\n');
 
-      setMessages(prev => [...prev, assistantMessage]);
-      setStreamingMessageId(assistantMessage.id);
-      simulateStreaming(responseText, assistantMessage.id);
+        // Add current task data to context
+        const allTasks = [
+          ...schedule.morning,
+          ...schedule.afternoon, 
+          ...schedule.evening,
+          ...schedule.unscheduled
+        ];
+
+        const taskContext = allTasks.length > 0 ? 
+          `\n\nCurrent user's tasks:\n${allTasks.map(task => 
+            `- ${task.text} (${task.timeSlot || 'unscheduled'}) ${task.completed ? '[COMPLETED]' : '[PENDING]'}`
+          ).join('\n')}` : 
+          '\n\nThe user has no tasks currently planned.';
+
+        const enhancedContext = conversationContext + taskContext + 
+          '\n\nNote: You can suggest that the user try commands like "add task: [description]", "complete task: [task name]", or "plan my day" to perform actions directly through the chat.';
+
+        const result = await callPrompt('custom_assistant', {
+          message: messageToSend,
+          context: enhancedContext,
+          role: selectedRole
+        });
+
+        const responseText = result.messages?.[0]?.content?.text || 'No response received';
+        
+        const assistantMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          type: 'assistant',
+          content: '',
+          timestamp: new Date(),
+          isStreaming: true,
+        };
+
+        setMessages(prev => [...prev, assistantMessage]);
+        setStreamingMessageId(assistantMessage.id);
+        simulateStreaming(responseText, assistantMessage.id);
+      }
 
     } catch (error) {
       const errorMessage: ChatMessage = {

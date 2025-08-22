@@ -69,7 +69,7 @@ const callPrompt = async (promptName: string, args: any = {}) => {
 function DashboardContent() {
   const [newTaskText, setNewTaskText] = useState('');
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('');
-  const [naturalLanguageTask, setNaturalLanguageTask] = useState('');
+  const [useSmartCategorization, setUseSmartCategorization] = useState(false);
   const [loading, setLoading] = useState(false);
   const [currentAction, setCurrentAction] = useState('');
   const [simulatedError, setSimulatedError] = useState(false);
@@ -90,12 +90,21 @@ function DashboardContent() {
     if (!newTaskText.trim()) return;
 
     setLoading(true);
-    setCurrentAction('Calling tool: add_task');
+    
     try {
-      await callTool('add_task', {
-        text: newTaskText,
-        ...(selectedTimeSlot && { timeSlot: selectedTimeSlot }),
-      });
+      if (useSmartCategorization) {
+        setCurrentAction('Calling tool: smart_add_task');
+        await callTool('smart_add_task', {
+          text: newTaskText,
+        });
+      } else {
+        setCurrentAction('Calling tool: add_task');
+        await callTool('add_task', {
+          text: newTaskText,
+          ...(selectedTimeSlot && { timeSlot: selectedTimeSlot }),
+        });
+      }
+      
       setNewTaskText('');
       setSelectedTimeSlot('');
       await mutate('/api/mcp/resources/schedule');
@@ -154,30 +163,6 @@ function DashboardContent() {
     }
   };
 
-  const handleSmartAddTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!naturalLanguageTask.trim()) return;
-
-    setLoading(true);
-    setCurrentAction('Calling tool: smart_add_task');
-    try {
-      await callTool('smart_add_task', {
-        text: naturalLanguageTask,
-      });
-      setNaturalLanguageTask('');
-      await mutate('/api/mcp/resources/schedule');
-      
-      // Complete tour action if waiting
-      if (waitingForAction) {
-        completeAction();
-      }
-    } catch (error) {
-      console.error('Failed to add smart task:', error);
-    } finally {
-      setLoading(false);
-      setCurrentAction('');
-    }
-  };
 
   useEffect(() => {
     if (scheduleData) {
@@ -248,30 +233,57 @@ function DashboardContent() {
                 type="text"
                 value={newTaskText}
                 onChange={(e) => setNewTaskText(e.target.value)}
-                placeholder="Enter a new task..."
+                placeholder={useSmartCategorization 
+                  ? "Describe your task naturally (e.g., make breakfast, evening workout)..." 
+                  : "Enter a new task..."
+                }
                 disabled={loading}
                 style={{ 
                   width: '100%', 
                   padding: '8px', 
                   fontSize: '16px',
-                  border: '1px solid #ccc',
+                  border: useSmartCategorization ? '1px solid #4CAF50' : '1px solid #ccc',
                   borderRadius: '3px'
                 }}
               />
             </div>
             
+            <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '14px' }}>
+                <input
+                  type="checkbox"
+                  checked={useSmartCategorization}
+                  onChange={(e) => {
+                    setUseSmartCategorization(e.target.checked);
+                    if (e.target.checked) {
+                      setSelectedTimeSlot(''); // Clear manual time slot when enabling smart categorization
+                    }
+                  }}
+                  disabled={loading}
+                />
+                🤖 Smart categorization
+              </label>
+              {useSmartCategorization && (
+                <span style={{ fontSize: '12px', color: '#4CAF50', fontStyle: 'italic' }}>
+                  AI will automatically choose the best time slot
+                </span>
+              )}
+            </div>
+            
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <select
-                value={selectedTimeSlot}
-                onChange={(e) => setSelectedTimeSlot(e.target.value)}
-                disabled={loading}
-                style={{ padding: '8px', borderRadius: '3px', border: '1px solid #ccc' }}
-              >
-                <option value="">Choose time slot (optional)</option>
-                <option value="morning">Morning</option>
-                <option value="afternoon">Afternoon</option>
-                <option value="evening">Evening</option>
-              </select>
+              {!useSmartCategorization && (
+                <select
+                  value={selectedTimeSlot}
+                  onChange={(e) => setSelectedTimeSlot(e.target.value)}
+                  disabled={loading}
+                  style={{ padding: '8px', borderRadius: '3px', border: '1px solid #ccc' }}
+                >
+                  <option value="">Choose time slot (optional)</option>
+                  <option value="morning">Morning</option>
+                  <option value="afternoon">Afternoon</option>
+                  <option value="evening">Evening</option>
+                </select>
+              )}
               
               <button 
                 className="tour-add-task-button"
@@ -279,56 +291,16 @@ function DashboardContent() {
                 disabled={loading || !newTaskText.trim()}
                 style={{ 
                   padding: '8px 16px', 
-                  backgroundColor: '#007bff', 
+                  backgroundColor: useSmartCategorization ? '#4CAF50' : '#007bff', 
                   color: 'white', 
                   border: 'none', 
                   borderRadius: '3px',
                   cursor: loading ? 'not-allowed' : 'pointer'
                 }}
               >
-                {loading ? 'Adding...' : 'Add Task'}
+                {loading ? 'Adding...' : (useSmartCategorization ? '✨ Add Smart Task' : 'Add Task')}
               </button>
             </div>
-          </form>
-
-          <form className="tour-smart-task-form" onSubmit={handleSmartAddTask} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#e8f5e8', borderRadius: '5px', border: '2px solid #4CAF50' }}>
-            <h3 style={{ margin: '0 0 10px 0', color: '#2E7D32', fontSize: '16px' }}>
-              🤖 Smart Task Creation
-            </h3>
-            <p style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#666' }}>
-              Just describe what you want to do naturally, and I'll automatically categorize it!
-            </p>
-            <div style={{ marginBottom: '10px' }}>
-              <input
-                type="text"
-                value={naturalLanguageTask}
-                onChange={(e) => setNaturalLanguageTask(e.target.value)}
-                placeholder="e.g., make breakfast, call mom, evening workout..."
-                disabled={loading}
-                style={{ 
-                  width: '100%', 
-                  padding: '8px', 
-                  fontSize: '16px',
-                  border: '1px solid #4CAF50',
-                  borderRadius: '3px'
-                }}
-              />
-            </div>
-            <button 
-              type="submit" 
-              disabled={loading || !naturalLanguageTask.trim()}
-              style={{ 
-                padding: '8px 16px', 
-                backgroundColor: '#4CAF50', 
-                color: 'white', 
-                border: 'none', 
-                borderRadius: '3px',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                fontSize: '14px'
-              }}
-            >
-              {loading ? 'Adding...' : '✨ Add Smart Task'}
-            </button>
           </form>
 
           {schedule.unscheduled.length > 0 && (
@@ -372,7 +344,12 @@ function DashboardContent() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             <MCPServerStatusPanel simulatedError={simulatedError} />
             <MCPConceptsPanel currentAction={currentAction} />
-            <MCPPromptsPanel currentAction={currentAction} setCurrentAction={setCurrentAction} schedule={schedule} />
+            <MCPPromptsPanel 
+              currentAction={currentAction} 
+              setCurrentAction={setCurrentAction} 
+              schedule={schedule}
+              onScheduleUpdate={() => mutate('/api/mcp/resources/schedule')}
+            />
             <MCPProtocolInspector />
           </div>
         </div>
