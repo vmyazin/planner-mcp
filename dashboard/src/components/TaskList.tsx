@@ -5,6 +5,7 @@ interface Task {
   text: string;
   completed: boolean;
   timeSlot?: 'morning' | 'afternoon' | 'evening';
+  date?: string; // Date in YYYY-MM-DD format
 }
 
 interface TaskListProps {

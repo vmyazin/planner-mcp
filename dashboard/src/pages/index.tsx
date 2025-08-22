@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import useSWR, { mutate } from 'swr';
-import { Target } from 'lucide-react';
 import { MCPLogEntry } from './api/mcp/[...action]';
 import { TourProvider, useTour } from '../contexts/TourContext';
 import { TourOverlay } from '../components/TourOverlay';
 import { TimedWelcomeModal } from '../components/TimedWelcomeModal';
 import { DashboardHeader } from '../components/DashboardHeader';
-import { TaskList } from '../components/TaskList';
+import { DaySelector } from '../components/DaySelector';
+import { DayBoard } from '../components/DayBoard';
+import { WeeklyOverview } from '../components/WeeklyOverview';
+import { parseTaskCommand, getTabForDate } from '../utils/commandProcessor';
 import { MCPProtocolInspector } from '../components/MCPProtocolInspector';
 import { MCPConceptsPanel } from '../components/MCPConceptsPanel';
 import { MCPPromptsPanel } from '../components/MCPPromptsPanel';
@@ -17,6 +19,7 @@ interface Task {
   text: string;
   completed: boolean;
   timeSlot?: 'morning' | 'afternoon' | 'evening';
+  date?: string; // Date in YYYY-MM-DD format
 }
 
 interface Schedule {
@@ -67,12 +70,11 @@ const callPrompt = async (promptName: string, args: any = {}) => {
 
 
 function DashboardContent() {
-  const [newTaskText, setNewTaskText] = useState('');
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('');
-  const [useSmartCategorization, setUseSmartCategorization] = useState(false);
   const [loading, setLoading] = useState(false);
   const [currentAction, setCurrentAction] = useState('');
   const [simulatedError, setSimulatedError] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [activeTab, setActiveTab] = useState('day-0'); // Start with today
   const { completeAction, waitingForAction, startTour, isActive, nextStep } = useTour();
 
   const { data: scheduleData, error } = useSWR<{ contents: [{ text: string }] }>(
@@ -81,32 +83,40 @@ function DashboardContent() {
     { refreshInterval: 2000 }
   );
 
-  const schedule: Schedule = scheduleData?.contents?.[0]?.text 
+  const allSchedule: Schedule = scheduleData?.contents?.[0]?.text 
     ? JSON.parse(scheduleData.contents[0].text)
     : { morning: [], afternoon: [], evening: [], unscheduled: [] };
 
-  const handleAddTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTaskText.trim()) return;
+  // Filter tasks for the selected date
+  const selectedDateStr = selectedDate.toISOString().split('T')[0];
+  const schedule: Schedule = {
+    morning: allSchedule.morning.filter(task => !task.date || task.date === selectedDateStr),
+    afternoon: allSchedule.afternoon.filter(task => !task.date || task.date === selectedDateStr),
+    evening: allSchedule.evening.filter(task => !task.date || task.date === selectedDateStr),
+    unscheduled: allSchedule.unscheduled.filter(task => !task.date || task.date === selectedDateStr)
+  };
 
+  const handleAddTaskForDate = async (text: string, timeSlot?: string, targetDate?: Date) => {
     setLoading(true);
     
     try {
-      if (useSmartCategorization) {
+      const taskDate = (targetDate || selectedDate).toISOString().split('T')[0];
+      
+      if (!timeSlot) { // Smart categorization
         setCurrentAction('Calling tool: smart_add_task');
         await callTool('smart_add_task', {
-          text: newTaskText,
+          text: text,
+          date: taskDate,
         });
       } else {
         setCurrentAction('Calling tool: add_task');
         await callTool('add_task', {
-          text: newTaskText,
-          ...(selectedTimeSlot && { timeSlot: selectedTimeSlot }),
+          text: text,
+          date: taskDate,
+          timeSlot: timeSlot,
         });
       }
       
-      setNewTaskText('');
-      setSelectedTimeSlot('');
       await mutate('/api/mcp/resources/schedule');
       
       // Complete tour action if waiting
@@ -120,6 +130,12 @@ function DashboardContent() {
       setCurrentAction('');
     }
   };
+
+  const handleNavigateToDay = (date: Date, tabId: string) => {
+    setSelectedDate(date);
+    setActiveTab(tabId);
+  };
+
 
   const handleCompleteTask = async (taskId: string) => {
     setLoading(true);
@@ -139,7 +155,8 @@ function DashboardContent() {
     setLoading(true);
     setCurrentAction('Calling tool: plan_day');
     try {
-      await callTool('plan_day');
+      const taskDate = selectedDate.toISOString().split('T')[0];
+      await callTool('plan_day', { date: taskDate });
       await mutate('/api/mcp/resources/schedule');
     } catch (error) {
       console.error('Failed to plan day:', error);
@@ -223,116 +240,55 @@ function DashboardContent() {
       <DashboardHeader />
 
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 120px)' }}>
-        {/* Left Side - Functional Day Planner */}
-        <div style={{ flex: 1, padding: '20px', borderRight: '2px solid #ccc', overflowY: 'auto', maxHeight: 'calc(100vh - 120px)' }}>
-          <h2 style={{ marginTop: 0 }}>Day Planner</h2>
+        {/* Left Side - Tabbed Day Planner */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: '2px solid #ccc', maxHeight: 'calc(100vh - 120px)' }}>
+          <div style={{ padding: '20px 20px 0 20px' }}>
+            <h2 style={{ marginTop: 0, marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              Day Planner
+              <span style={{ 
+                fontSize: '18px', 
+                fontWeight: '400', 
+                color: '#666',
+                marginLeft: '8px'
+              }}>
+                • {selectedDate.toLocaleDateString('en-US', { 
+                  weekday: 'long', 
+                  month: 'short', 
+                  day: 'numeric' 
+                })}
+              </span>
+            </h2>
+            
+            <DaySelector 
+              selectedDate={selectedDate} 
+              onDateChange={setSelectedDate}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+            />
+          </div>
           
-          <form className="tour-add-task-form" onSubmit={handleAddTask} style={{ marginBottom: '20px', padding: '15px', backgroundColor: '#f5f5f5', borderRadius: '5px' }}>
-            <div style={{ marginBottom: '10px' }}>
-              <input
-                type="text"
-                value={newTaskText}
-                onChange={(e) => setNewTaskText(e.target.value)}
-                placeholder={useSmartCategorization 
-                  ? "Describe your task naturally (e.g., make breakfast, evening workout)..." 
-                  : "Enter a new task..."
-                }
-                disabled={loading}
-                style={{ 
-                  width: '100%', 
-                  padding: '8px', 
-                  fontSize: '16px',
-                  border: useSmartCategorization ? '1px solid #4CAF50' : '1px solid #ccc',
-                  borderRadius: '3px'
+          <div style={{ flex: 1, overflow: 'hidden' }}>
+            {activeTab === 'overview' ? (
+              <WeeklyOverview 
+                allSchedule={allSchedule}
+                onDateSelect={(date) => {
+                  setSelectedDate(date);
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const dayIndex = Math.floor((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                  setActiveTab(`day-${dayIndex}`);
                 }}
               />
-            </div>
-            
-            <div style={{ marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '14px' }}>
-                <input
-                  type="checkbox"
-                  checked={useSmartCategorization}
-                  onChange={(e) => {
-                    setUseSmartCategorization(e.target.checked);
-                    if (e.target.checked) {
-                      setSelectedTimeSlot(''); // Clear manual time slot when enabling smart categorization
-                    }
-                  }}
-                  disabled={loading}
-                />
-                🤖 Smart categorization
-              </label>
-              {useSmartCategorization && (
-                <span style={{ fontSize: '12px', color: '#4CAF50', fontStyle: 'italic' }}>
-                  AI will automatically choose the best time slot
-                </span>
-              )}
-            </div>
-            
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              {!useSmartCategorization && (
-                <select
-                  value={selectedTimeSlot}
-                  onChange={(e) => setSelectedTimeSlot(e.target.value)}
-                  disabled={loading}
-                  style={{ padding: '8px', borderRadius: '3px', border: '1px solid #ccc' }}
-                >
-                  <option value="">Choose time slot (optional)</option>
-                  <option value="morning">Morning</option>
-                  <option value="afternoon">Afternoon</option>
-                  <option value="evening">Evening</option>
-                </select>
-              )}
-              
-              <button 
-                className="tour-add-task-button"
-                type="submit" 
-                disabled={loading || !newTaskText.trim()}
-                style={{ 
-                  padding: '8px 16px', 
-                  backgroundColor: useSmartCategorization ? '#4CAF50' : '#007bff', 
-                  color: 'white', 
-                  border: 'none', 
-                  borderRadius: '3px',
-                  cursor: loading ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {loading ? 'Adding...' : (useSmartCategorization ? '✨ Add Smart Task' : 'Add Task')}
-              </button>
-            </div>
-          </form>
-
-          {schedule.unscheduled.length > 0 && (
-            <div style={{ marginBottom: '20px' }}>
-              <button
-                onClick={handlePlanDay}
-                disabled={loading}
-                style={{
-                  padding: '10px 20px',
-                  backgroundColor: '#28a745',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '3px',
-                  cursor: loading ? 'not-allowed' : 'pointer'
-                }}
-              >
-                {loading ? 'Planning...' : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Target size={16} />
-                    Plan My Day
-                  </div>
-                )}
-              </button>
-            </div>
-          )}
-
-          <div className="tour-task-container" style={{ display: 'grid', gap: '15px' }}>
-            <TaskList tasks={schedule.morning} title="Morning" onCompleteTask={handleCompleteTask} onArchiveTask={handleArchiveTask} loading={loading} />
-            <TaskList tasks={schedule.afternoon} title="Afternoon" onCompleteTask={handleCompleteTask} onArchiveTask={handleArchiveTask} loading={loading} />
-            <TaskList tasks={schedule.evening} title="Evening" onCompleteTask={handleCompleteTask} onArchiveTask={handleArchiveTask} loading={loading} />
-            {schedule.unscheduled.length > 0 && (
-              <TaskList tasks={schedule.unscheduled} title="Unscheduled" onCompleteTask={handleCompleteTask} onArchiveTask={handleArchiveTask} loading={loading} />
+            ) : (
+              <DayBoard
+                date={selectedDate}
+                schedule={schedule}
+                onAddTask={handleAddTaskForDate}
+                onCompleteTask={handleCompleteTask}
+                onArchiveTask={handleArchiveTask}
+                onPlanDay={handlePlanDay}
+                loading={loading}
+              />
             )}
           </div>
         </div>
@@ -349,6 +305,7 @@ function DashboardContent() {
               setCurrentAction={setCurrentAction} 
               schedule={schedule}
               onScheduleUpdate={() => mutate('/api/mcp/resources/schedule')}
+              onNavigateToDay={handleNavigateToDay}
             />
             <MCPProtocolInspector />
           </div>

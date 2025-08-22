@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Brain, Target, Lightbulb, Calendar, Clock, Send } from 'lucide-react';
+import { parseTaskCommand, getTabForDate } from '../utils/commandProcessor';
 
 interface Task {
   id: string;
@@ -29,6 +30,7 @@ interface MCPPromptsPanelProps {
   setCurrentAction: (action: string) => void;
   schedule: Schedule;
   onScheduleUpdate?: () => void;
+  onNavigateToDay?: (date: Date, tabId: string) => void;
 }
 
 interface TaskMatchResult {
@@ -62,7 +64,7 @@ const callTool = async (toolName: string, args: any = {}) => {
   return response.json();
 };
 
-export const MCPPromptsPanel = ({ currentAction, setCurrentAction, schedule, onScheduleUpdate }: MCPPromptsPanelProps) => {
+export const MCPPromptsPanel = ({ currentAction, setCurrentAction, schedule, onScheduleUpdate, onNavigateToDay }: MCPPromptsPanelProps) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
@@ -172,7 +174,55 @@ export const MCPPromptsPanel = ({ currentAction, setCurrentAction, schedule, onS
   };
 
   const detectAndExecuteToolActions = async (userMessage: string): Promise<string | null> => {
-    // Use LLM to analyze user intent instead of pattern matching
+    // First, try to parse as a day-specific task command using our natural language processor
+    const commandResult = parseTaskCommand(userMessage);
+    
+    if (commandResult.success && commandResult.command) {
+      const { command } = commandResult;
+      
+      if (command.action === 'add-task') {
+        try {
+          let taskDate: string;
+          let navigationMessage = '';
+          
+          if (command.date && onNavigateToDay) {
+            // Navigate to the specified day
+            taskDate = command.date.toISOString().split('T')[0];
+            const tabId = getTabForDate(command.date);
+            onNavigateToDay(command.date, tabId);
+            navigationMessage = ` (navigated to ${command.day || 'selected day'})`;
+          } else {
+            // Use current date
+            taskDate = new Date().toISOString().split('T')[0];
+          }
+          
+          if (command.timeSlot) {
+            // Use add_task with specific time slot
+            setCurrentAction('Calling tool: add_task');
+            await callTool('add_task', {
+              text: command.taskText,
+              date: taskDate,
+              timeSlot: command.timeSlot
+            });
+            if (onScheduleUpdate) onScheduleUpdate();
+            return `✅ Added "${command.taskText}" to ${command.timeSlot}${navigationMessage}`;
+          } else {
+            // Use smart categorization
+            setCurrentAction('Calling tool: smart_add_task');
+            const result = await callTool('smart_add_task', {
+              text: command.taskText,
+              date: taskDate
+            });
+            if (onScheduleUpdate) onScheduleUpdate();
+            return `✅ ${result.content[0].text}${navigationMessage}`;
+          }
+        } catch (error) {
+          return `❌ Failed to add task: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        }
+      }
+    }
+
+    // If no day-specific command detected, use LLM to analyze user intent
     const intentResult = await analyzeUserIntent(userMessage);
     
     if (!intentResult) {
