@@ -264,6 +264,17 @@ class PlannerServer {
             required: ['text'],
           },
         },
+        {
+          name: 'analyze_intent',
+          description: 'Analyze user message to determine intent and extract parameters for task management',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              message: { type: 'string', description: 'User message to analyze' },
+            },
+            required: ['message'],
+          },
+        },
       ],
     }));
 
@@ -367,6 +378,58 @@ class PlannerServer {
             {
               type: 'text',
               text: `Added task: ${newTask.text}${timeSlotText}`,
+            },
+          ],
+        };
+      }
+
+      if (name === 'analyze_intent') {
+        if (!this.anthropic) {
+          throw new Error('Anthropic API not available for intent analysis');
+        }
+
+        const systemPrompt = `You are an intent analyzer for a task management system. Analyze the user's message and determine their intent.
+
+Return a JSON object with:
+- intent: one of "add_task", "complete_task", "plan_day", "archive_completed", "list_tasks", "help", or "conversation"
+- params: object containing extracted parameters
+
+For "add_task": extract taskText
+For "complete_task": extract taskId (if mentioned), taskName (for partial matches), or taskNumber (for numbered references like "task 1")  
+For other intents: extract any relevant parameters
+
+Examples:
+- "buy groceries" → {"intent": "add_task", "params": {"taskText": "buy groceries"}}
+- "add clean kitchen" → {"intent": "add_task", "params": {"taskText": "clean kitchen"}}  
+- "complete presentation" → {"intent": "complete_task", "params": {"taskName": "presentation"}}
+- "mark task 2 as done" → {"intent": "complete_task", "params": {"taskNumber": "2"}}
+- "plan my day" → {"intent": "plan_day", "params": {}}
+- "archive all completed tasks" → {"intent": "archive_completed", "params": {}}
+- "show my tasks" → {"intent": "list_tasks", "params": {}}
+- "help me" → {"intent": "help", "params": {}}
+- "how's the weather?" → {"intent": "conversation", "params": {}}
+
+Respond with ONLY the JSON object, no other text.`;
+
+        const response = await this.anthropic.messages.create({
+          model: 'claude-3-haiku-20240307',
+          max_tokens: 200,
+          system: systemPrompt,
+          messages: [
+            {
+              role: 'user',
+              content: (args as any).message,
+            },
+          ],
+        });
+
+        const intentText = response.content[0]?.type === 'text' ? response.content[0].text : '';
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: intentText,
             },
           ],
         };
