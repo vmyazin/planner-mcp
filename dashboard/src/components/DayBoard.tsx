@@ -38,13 +38,14 @@ export const DayBoard = ({
 }: DayBoardProps) => {
   const [newTaskText, setNewTaskText] = useState('');
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('');
-  const [useSmartCategorization, setUseSmartCategorization] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskText.trim()) return;
 
-    await onAddTask(newTaskText, useSmartCategorization ? undefined : selectedTimeSlot);
+    // Always use smart categorization (AI) unless a specific time slot is selected
+    // Let the AI handle natural language processing including dates and times
+    await onAddTask(newTaskText, selectedTimeSlot || undefined);
     setNewTaskText('');
     setSelectedTimeSlot('');
   };
@@ -79,85 +80,43 @@ export const DayBoard = ({
               type="text"
               value={newTaskText}
               onChange={(e) => setNewTaskText(e.target.value)}
-              placeholder={useSmartCategorization 
-                ? "Describe your task naturally (e.g., morning jog, evening meeting)..." 
-                : "Enter a new task for this day..."
-              }
+              placeholder="Describe your task naturally (AI will handle scheduling)..."
               disabled={loading}
               style={{ 
                 width: '100%', 
                 padding: '10px', 
                 fontSize: '16px',
-                border: useSmartCategorization ? '2px solid #4CAF50' : '1px solid #ddd',
+                border: '1px solid #ddd',
                 borderRadius: '6px',
                 outline: 'none'
               }}
             />
           </div>
           
-          <div style={{ 
-            marginBottom: '12px', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '10px' 
-          }}>
-            <label style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '6px', 
-              fontSize: '14px',
-              cursor: 'pointer'
-            }}>
-              <input
-                type="checkbox"
-                checked={useSmartCategorization}
-                onChange={(e) => {
-                  setUseSmartCategorization(e.target.checked);
-                  if (e.target.checked) {
-                    setSelectedTimeSlot('');
-                  }
-                }}
-                disabled={loading}
-              />
-              🤖 Smart categorization
-            </label>
-            {useSmartCategorization && (
-              <span style={{ 
-                fontSize: '12px', 
-                color: '#4CAF50', 
-                fontStyle: 'italic' 
-              }}>
-                AI will automatically choose the best time slot
-              </span>
-            )}
-          </div>
-          
           <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-            {!useSmartCategorization && (
-              <select
-                value={selectedTimeSlot}
-                onChange={(e) => setSelectedTimeSlot(e.target.value)}
-                disabled={loading}
-                style={{ 
-                  padding: '8px 12px', 
-                  borderRadius: '6px', 
-                  border: '1px solid #ddd',
-                  fontSize: '14px'
-                }}
-              >
-                <option value="">Choose time slot (optional)</option>
-                <option value="morning">Morning</option>
-                <option value="afternoon">Afternoon</option>
-                <option value="evening">Evening</option>
-              </select>
-            )}
+            <select
+              value={selectedTimeSlot}
+              onChange={(e) => setSelectedTimeSlot(e.target.value)}
+              disabled={loading}
+              style={{ 
+                padding: '8px 12px', 
+                borderRadius: '6px', 
+                border: '1px solid #ddd',
+                fontSize: '14px'
+              }}
+            >
+              <option value="">Choose time slot (optional)</option>
+              <option value="morning">Morning</option>
+              <option value="afternoon">Afternoon</option>
+              <option value="evening">Evening</option>
+            </select>
             
             <button 
               type="submit" 
               disabled={loading || !newTaskText.trim()}
               style={{ 
                 padding: '8px 16px', 
-                backgroundColor: useSmartCategorization ? '#4CAF50' : '#007bff', 
+                backgroundColor: '#007bff', 
                 color: 'white', 
                 border: 'none', 
                 borderRadius: '6px',
@@ -166,7 +125,7 @@ export const DayBoard = ({
                 fontWeight: '500'
               }}
             >
-              {loading ? 'Adding...' : (useSmartCategorization ? '✨ Add Smart Task' : 'Add Task')}
+              {loading ? 'Adding...' : 'Add Task'}
             </button>
           </div>
         </form>
